@@ -12,3 +12,63 @@
   display: flex;
   align-items: stretch;
 }
+
+/* ====================== 对话区 / 预览区之间的分隔条 ======================
+   预览区宽度由 App.tsx 写在 .app-main 的 --preview-w 上（可拖拽、有记忆）。
+   这里只负责画那条线和拖拽反馈。 */
+
+.pane-splitter {
+  flex: 0 0 6px;
+  position: relative;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: col-resize;
+  /* 触屏上明确接管手势，否则拖动会被页面滚动抢走 */
+  touch-action: none;
+}
+
+/* 常态是一条 1px 细线，和面板边框同色，不抢视线 */
+.pane-splitter::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  transform: translateX(-50%);
+  background: var(--border);
+  transition: width 0.15s ease, background 0.15s ease;
+}
+
+/* 悬停或键盘聚焦时加粗并高亮，明确告诉用户"这里能拖" */
+.pane-splitter:hover::before,
+.pane-splitter:focus-visible::before {
+  width: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+}
+
+.pane-splitter:focus-visible {
+  outline: none;
+}
+
+/* 6px 的靶子太难抓，往两侧各扩 4px 命中区（视觉上还是 6px） */
+.pane-splitter::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  right: -4px;
+}
+
+/* 拖拽过程中：全局保持抓取光标，且不要选中任何文字 */
+body.is-col-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+
+body.is-col-resizing * {
+  cursor: col-resize !important;
+}

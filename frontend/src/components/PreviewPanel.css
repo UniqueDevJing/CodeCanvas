@@ -1,14 +1,21 @@
 /* ============================ 右侧预览区样式 ============================ */
 
 .preview-pane {
-  /* 辅助区域：宽度由 --preview-w 决定，不再抢占剩余空间 */
+  /* 宽度由 App.tsx 写到 .app-main 的 --preview-w（可拖拽、有记忆），这里只消费它。
+     用 inline-size 容器，让工具条在面板被拖窄时能自动精简。 */
   flex: 0 0 var(--preview-w);
   width: var(--preview-w);
   min-width: 0;
   display: flex;
   flex-direction: column;
   background: var(--bg);
-  border-left: 1px solid var(--border);
+  container-type: inline-size;
+}
+
+/* 全屏：预览占满整个主区，对话区让位——看清生成的整个页面 */
+.preview-pane.is-full {
+  flex: 1 1 auto;
+  width: auto;
 }
 
 /* 收起后只剩一条窄轨道，点一下展开 */
@@ -43,6 +50,7 @@
 .preview-toolbar {
   flex: 0 0 auto;
   height: 44px;
+  min-width: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -57,6 +65,7 @@
   align-items: center;
   gap: 2px;
   padding: 2px;
+  min-width: 0;
   border-radius: var(--radius-sm);
   background: var(--panel-sunken);
 }
@@ -64,6 +73,9 @@
 .tab-btn {
   height: 26px;
   padding: 0 13px;
+  /* 面板被拖窄时按钮会被挤压，不锁住的话"预览"会被折成两行 */
+  flex: 0 0 auto;
+  white-space: nowrap;
   border: 1px solid transparent;
   border-radius: 6px;
   background: transparent;
@@ -87,6 +99,7 @@
 .toolbar-actions {
   display: flex;
   align-items: center;
+  flex: 0 0 auto;
   gap: 8px;
 }
 
@@ -126,6 +139,39 @@
   width: 1px;
   height: 18px;
   background: var(--border);
+}
+
+/* ---------------- 窄宽度下自动精简工具条 ----------------
+   预览区最小可拖到 340px，这时五个按钮加四个标签必然挤爆。
+   用容器查询按面板自身宽度降级，而不是让按钮溢出。 */
+
+@container (max-width: 620px) {
+  .toolbar-optional {
+    display: none;
+  }
+}
+
+@container (max-width: 520px) {
+  /* 设备切换在窄面板里意义不大，先让位给真正要用的操作 */
+  .device-group {
+    display: none;
+  }
+}
+
+@container (max-width: 430px) {
+  .preview-toolbar {
+    gap: 4px;
+    padding: 0 8px;
+  }
+
+  /* 再收紧一档间距，保证 360px 下四个标签能完整放下且不换行 */
+  .tab-btn {
+    padding: 0 7px;
+  }
+
+  .toolbar-actions {
+    gap: 6px;
+  }
 }
 
 /* -------------------------------- 视图区 -------------------------------- */

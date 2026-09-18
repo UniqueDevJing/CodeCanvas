@@ -42,8 +42,8 @@
   --radius-pill: 999px;
   --shadow-pop: 0 6px 20px rgba(24, 24, 20, 0.09), 0 1px 3px rgba(24, 24, 20, 0.06);
   --topbar-h: 56px;
-  /* 预览是辅助区：给一个宽度区间，而不是让它抢走剩余空间——主区域留给对话 */
-  --preview-w: clamp(360px, 42%, 620px);
+  /* --preview-w 不在这里定义：预览区宽度由 App.tsx 按用户拖拽结果写到 .app-main 上，
+     默认值与上下限也都在那里（PREVIEW_MIN_W / CHAT_MIN_W / defaultPreviewWidth）。 */
   --code-line-h: 19px;
 
   --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',

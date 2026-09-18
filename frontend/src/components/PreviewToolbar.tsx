@@ -1,4 +1,13 @@
-import { ChevronDownIcon, DesktopIcon, ExternalIcon, MobileIcon, RefreshIcon, TabletIcon } from './icons';
+import {
+  ChevronDownIcon,
+  DesktopIcon,
+  ExpandIcon,
+  ExternalIcon,
+  MobileIcon,
+  RefreshIcon,
+  ShrinkIcon,
+  TabletIcon,
+} from './icons';
 import type { DeviceKind, PreviewTab } from './previewTypes';
 
 const TABS: { key: PreviewTab; label: string }[] = [
@@ -22,6 +31,8 @@ interface PreviewToolbarProps {
   onRefresh: () => void;
   onOpenExternal: () => void;
   onCollapse: () => void;
+  onToggleFull: () => void;
+  full: boolean;
   canRefresh: boolean;
 }
 
@@ -33,6 +44,8 @@ export function PreviewToolbar({
   onRefresh,
   onOpenExternal,
   onCollapse,
+  onToggleFull,
+  full,
   canRefresh,
 }: PreviewToolbarProps) {
   return (
@@ -72,7 +85,7 @@ export function PreviewToolbar({
           })}
         </div>
 
-        <span className="toolbar-divider" aria-hidden="true" />
+        <span className="toolbar-divider toolbar-optional" aria-hidden="true" />
 
         <button
           type="button"
@@ -85,25 +98,39 @@ export function PreviewToolbar({
         </button>
         <button
           type="button"
-          className="btn btn-sm"
+          className="btn btn-icon btn-sm"
           onClick={onOpenExternal}
           disabled={!canRefresh}
+          title="在新窗口打开"
         >
           <ExternalIcon size={14} />
-          新窗口打开
+          <span className="visually-hidden">在新窗口打开</span>
         </button>
 
         <span className="toolbar-divider" aria-hidden="true" />
 
-        {/* 收起辅助区，把整个宽度让给对话 */}
+        {/* 全屏：让预览占满整个主区，对话区暂时让位——看完整页面用 */}
         <button
           type="button"
-          className="btn btn-icon btn-sm toolbar-collapse"
-          onClick={onCollapse}
-          title="收起预览区"
+          className="btn btn-icon btn-sm"
+          onClick={onToggleFull}
+          title={full ? '退出全屏（Esc）' : '全屏查看（看清整个页面）'}
+          aria-pressed={full}
         >
-          <ChevronDownIcon size={15} />
+          {full ? <ShrinkIcon size={15} /> : <ExpandIcon size={15} />}
         </button>
+
+        {/* 收起辅助区，把整个宽度让给对话 */}
+        {!full && (
+          <button
+            type="button"
+            className="btn btn-icon btn-sm toolbar-collapse"
+            onClick={onCollapse}
+            title="收起预览区"
+          >
+            <ChevronDownIcon size={15} />
+          </button>
+        )}
       </div>
     </div>
   );

@@ -4,7 +4,7 @@ import { PreviewStage } from './PreviewStage';
 import { PreviewToolbar } from './PreviewToolbar';
 import { QualityPanel } from './QualityPanel';
 import { VersionTimeline } from './VersionTimeline';
-import { ChevronDownIcon } from './icons';
+import { ChevronDownIcon, SparkIcon } from './icons';
 import type { DeviceKind, PreviewTab } from './previewTypes';
 import type { ProjectFile, QualityCheck, VersionInfo } from '../types';
 import './PreviewPanel.css';
@@ -17,7 +17,9 @@ interface PreviewPanelProps {
   quality: QualityCheck[];
   rollingBack: boolean;
   collapsed: boolean;
+  full: boolean;
   onToggleCollapse: () => void;
+  onToggleFull: () => void;
   onRollback: (versionId: string) => void;
   onNotify: (text: string) => void;
 }
@@ -35,7 +37,9 @@ export function PreviewPanel({
   quality,
   rollingBack,
   collapsed,
+  full,
   onToggleCollapse,
+  onToggleFull,
   onRollback,
   onNotify,
 }: PreviewPanelProps) {
@@ -73,7 +77,7 @@ export function PreviewPanel({
   }
 
   return (
-    <section className="preview-pane" aria-label="预览区">
+    <section className={`preview-pane${full ? ' is-full' : ''}`} aria-label="预览区">
       <PreviewToolbar
         tab={tab}
         onTabChange={setTab}
@@ -82,6 +86,8 @@ export function PreviewPanel({
         onRefresh={handleRefresh}
         onOpenExternal={handleOpenExternal}
         onCollapse={onToggleCollapse}
+        onToggleFull={onToggleFull}
+        full={full}
         canRefresh={hasPreview}
       />
 
@@ -91,7 +97,11 @@ export function PreviewPanel({
             <PreviewStage html={html} device={device} reloadKey={reloadKey} />
           ) : (
             <div className="preview-empty-state">
-              <p>生成结果会显示在这里</p>
+              <span className="preview-empty-icon">
+                <SparkIcon size={17} />
+              </span>
+              <h2>还没有可以预览的内容</h2>
+              <p>在左侧描述你想要的应用，生成完成后这里会立刻显示效果。</p>
             </div>
           ))}
 

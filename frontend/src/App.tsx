@@ -1,4 +1,9 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
+import type {
+  CSSProperties,
+  KeyboardEvent as ReactKeyboardEvent,
+  PointerEvent as ReactPointerEvent,
+} from 'react';
 import { ChatPanel } from './components/ChatPanel';
 import { DeployDialog } from './components/DeployDialog';
 import { GalleryView } from './components/GalleryView';
@@ -21,6 +26,36 @@ import './App.css';
 
 /** 同一个项目最多自动触发的运行时修复次数，超过则改为提示用户手动输入 */
 const MAX_AUTO_HEAL = 2;
+
+/* --------------------------- 预览区宽度（可拖拽） --------------------------- */
+
+/** 预览区最小宽度：再窄工具条的四个标签就放不下了（实测阈值） */
+const PREVIEW_MIN_W = 360;
+/** 对话区最小宽度：无论怎么拖，都要给它留出能正常读消息的空间 */
+const CHAT_MIN_W = 360;
+/** 记住用户拖出来的宽度，下次打开还是这个尺寸 */
+const PREVIEW_W_STORE_KEY = 'codecanvas.previewWidth';
+
+/**
+ * 默认宽度。
+ *
+ * 早先这里硬顶 620px，宽屏上生成的应用会被挤扁、根本看不全——
+ * 现在放宽到 760px，并且允许用户自己拖到更大。
+ */
+function defaultPreviewWidth(): number {
+  const viewport = typeof window === 'undefined' ? 1440 : window.innerWidth;
+  return Math.round(Math.min(760, Math.max(400, viewport * 0.46)));
+}
+
+function readStoredPreviewWidth(): number {
+  try {
+    const raw = Number(window.localStorage.getItem(PREVIEW_W_STORE_KEY));
+    if (Number.isFinite(raw) && raw >= PREVIEW_MIN_W) return raw;
+  } catch {
+    // 隐私模式 / 禁用存储时读不到，用默认值即可
+  }
+  return defaultPreviewWidth();
+}
 
 function isAbortError(error: unknown): boolean {
   return (
@@ -45,9 +80,14 @@ export default function App() {
   const [shareUrl, setShareUrl] = useState('');
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [previewCollapsed, setPreviewCollapsed] = useState(false);
+  const [previewFull, setPreviewFull] = useState(false);
+  const [previewWidth, setPreviewWidth] = useState(readStoredPreviewWidth);
 
   const stateRef = useRef(state);
   const toastSeqRef = useRef(0);
+  const mainRef = useRef<HTMLElement>(null);
+  const draggingRef = useRef(false);
+  const previewWidthRef = useRef(previewWidth);
 
   useEffect(() => {
     stateRef.current = state;
@@ -276,6 +316,99 @@ export default function App() {
     [showToast],
   );
 
+  /* ------------------------------- 预览区布局 ------------------------------- */
+
+  useEffect(() => {
+    previewWidthRef.current = previewWidth;
+  }, [previewWidth]);
+
+  const clampPreviewWidth = useCallback((next: number) => {
+    const main = mainRef.current;
+    const total = main?.clientWidth ?? window.innerWidth;
+    // 分隔条自己也要占宽度，不算进来的话对话区会被挤到下限定值以下
+    const splitter = main?.querySelector('.pane-splitter')?.getBoundingClientRect().width ?? 0;
+    const max = Math.max(PREVIEW_MIN_W, total - CHAT_MIN_W - splitter);
+    return Math.round(Math.min(Math.max(next, PREVIEW_MIN_W), max));
+  }, []);
+
+  const persistPreviewWidth = useCallback((width: number) => {
+    try {
+      window.localStorage.setItem(PREVIEW_W_STORE_KEY, String(width));
+    } catch {
+      // 存不下不影响本次使用，忽略
+    }
+  }, []);
+
+  const handleSplitterDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    draggingRef.current = true;
+    document.body.classList.add('is-col-resizing');
+  }, []);
+
+  const handleSplitterMove = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (!draggingRef.current) return;
+      const rect = mainRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      setPreviewWidth(clampPreviewWidth(rect.right - event.clientX));
+    },
+    [clampPreviewWidth],
+  );
+
+  const handleSplitterUp = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (!draggingRef.current) return;
+      draggingRef.current = false;
+      event.currentTarget.releasePointerCapture(event.pointerId);
+      document.body.classList.remove('is-col-resizing');
+      // 拖动过程中不写 localStorage（每帧同步写会卡），松手才落盘
+      persistPreviewWidth(previewWidthRef.current);
+    },
+    [persistPreviewWidth],
+  );
+
+  /** 键盘也能调：聚焦分隔条后按左右方向键，Shift 加速 */
+  const handleSplitterKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLDivElement>) => {
+      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+      event.preventDefault();
+      const step = event.shiftKey ? 80 : 24;
+      setPreviewWidth((current) => {
+        const next = clampPreviewWidth(event.key === 'ArrowLeft' ? current + step : current - step);
+        persistPreviewWidth(next);
+        return next;
+      });
+    },
+    [clampPreviewWidth, persistPreviewWidth],
+  );
+
+  // 窗口变窄时把预览宽度收进合理范围，别让对话区被挤没
+  useEffect(() => {
+    const onResize = () => setPreviewWidth((current) => clampPreviewWidth(current));
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [clampPreviewWidth]);
+
+  // 全屏预览时按 Esc 退出
+  useEffect(() => {
+    if (!previewFull) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setPreviewFull(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [previewFull]);
+
+  const splitterVisible = !previewFull && !previewCollapsed;
+
+  /** 双击分隔条回到默认宽度 */
+  const resetPreviewWidth = useCallback(() => {
+    const next = clampPreviewWidth(defaultPreviewWidth());
+    setPreviewWidth(next);
+    persistPreviewWidth(next);
+  }, [clampPreviewWidth, persistPreviewWidth]);
+
   /* ---------------------------------- 渲染 --------------------------------- */
 
   return (
@@ -302,13 +435,40 @@ export default function App() {
       {galleryOpen ? (
         <GalleryView open={galleryOpen} onClose={() => setGalleryOpen(false)} />
       ) : (
-        <main className="app-main">
-          <ChatPanel
-            messages={state.messages}
-            streaming={state.streaming}
-            onSend={handleSend}
-            onStop={handleStop}
-          />
+        <main
+          className="app-main"
+          ref={mainRef}
+          style={{ '--preview-w': `${previewWidth}px` } as CSSProperties}
+        >
+          {!previewFull && (
+            <ChatPanel
+              messages={state.messages}
+              streaming={state.streaming}
+              onSend={handleSend}
+              onStop={handleStop}
+            />
+          )}
+
+          {/* 拖动它来分配对话区与预览区的宽度，双击复位 */}
+          {splitterVisible && (
+            <div
+              className="pane-splitter"
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="调整预览区宽度"
+              aria-valuenow={previewWidth}
+              aria-valuemin={PREVIEW_MIN_W}
+              tabIndex={0}
+              onPointerDown={handleSplitterDown}
+              onPointerMove={handleSplitterMove}
+              onPointerUp={handleSplitterUp}
+              onPointerCancel={handleSplitterUp}
+              onDoubleClick={resetPreviewWidth}
+              onKeyDown={handleSplitterKeyDown}
+              title="拖动调整预览区宽度，双击复位"
+            />
+          )}
+
           <PreviewPanel
             html={state.preview.html}
             files={state.preview.files}
@@ -317,7 +477,9 @@ export default function App() {
             quality={state.quality}
             rollingBack={rollingBack}
             collapsed={previewCollapsed}
+            full={previewFull}
             onToggleCollapse={() => setPreviewCollapsed((v) => !v)}
+            onToggleFull={() => setPreviewFull((v) => !v)}
             onRollback={handleRollback}
             onNotify={showToast}
           />

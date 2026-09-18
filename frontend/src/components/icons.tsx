@@ -155,6 +155,38 @@ export function ExternalIcon(props: IconProps) {
   );
 }
 
+/** 最大化：四角朝外——把预览铺满整个窗口 */
+export function ExpandIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M6 2.6H2.6V6" />
+      <path d="M2.6 2.6 6.4 6.4" />
+      <path d="M10 13.4h3.4V10" />
+      <path d="M13.4 13.4 9.6 9.6" />
+      <path d="M13.4 6V2.6H10" />
+      <path d="M13.4 2.6 9.6 6.4" />
+      <path d="M2.6 10v3.4H6" />
+      <path d="M2.6 13.4 6.4 9.6" />
+    </Svg>
+  );
+}
+
+/** 还原：四角朝内——退出全屏 */
+export function ShrinkIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M6.4 2.6V6H2.9" />
+      <path d="M2.9 2.6 6.4 6.1" />
+      <path d="M9.6 13.4V10h3.5" />
+      <path d="M13.1 13.4 9.6 9.9" />
+      <path d="M9.6 6V2.6h3.5" />
+      <path d="M13.1 2.6 9.6 6.1" />
+      <path d="M6.4 10v3.4H2.9" />
+      <path d="M2.9 13.4 6.4 9.9" />
+    </Svg>
+  );
+}
+
 export function GridIcon(props: IconProps) {
   return (
     <Svg {...props}>
