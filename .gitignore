@@ -1,0 +1,27 @@
+# 构建产物
+target/
+dist/
+dist-verify/
+node_modules/
+*.log
+vite.config.ts.timestamp-*.mjs
+
+# 本地运行数据（项目与版本快照）
+codecanvas-data/
+backend/codecanvas-data/
+
+# 本地密钥与个人配置，绝不要提交
+.env
+*.local.yml
+application-local.yml
+
+# 部署凭据（含站点访问口令）
+deploy/.deploy-credentials
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# 损坏文件的取证备份（2026-09-18 App.tsx 全零事故）
+*.corrupt-*

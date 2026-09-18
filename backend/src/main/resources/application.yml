@@ -1,0 +1,62 @@
+server:
+  port: 8080
+  shutdown: graceful
+
+spring:
+  application:
+    name: codecanvas
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+  mvc:
+    async:
+      # 必须不小于 SSE 的超时时间，否则长生成会被容器提前掐断
+      request-timeout: 1200000
+
+codecanvas:
+  storage:
+    # 项目与版本快照的落盘位置
+    dir: ./codecanvas-data
+  llm:
+    # auto=有密钥用真实模型，否则退回离线引擎；real=强制真实；mock=强制离线
+    mode: ${CODECANVAS_LLM_MODE:auto}
+    # openai=OpenAI 兼容协议（DeepSeek / GLM / 通义 / 硅基流动等）；anthropic=Anthropic 协议
+    active-provider: ${CODECANVAS_PROVIDER:openai}
+    openai:
+      # 默认指向阿里云百炼（DashScope）的 OpenAI 兼容端点；
+      # 换 base-url 与模型名即可切到 DeepSeek / GLM / 硅基流动等其他兼容厂商
+      base-url: ${CODECANVAS_OPENAI_BASE:https://dashscope.aliyuncs.com/compatible-mode/v1}
+      api-key: ${CODECANVAS_OPENAI_KEY:}
+      timeout-seconds: 180
+    anthropic:
+      base-url: ${CODECANVAS_ANTHROPIC_BASE:https://api.anthropic.com/v1}
+      api-key: ${CODECANVAS_ANTHROPIC_KEY:}
+      timeout-seconds: 180
+    # 首字节超时：流式调用如果这么久还没吐出任何内容，就认为这家不通，立刻降级，
+    # 不让用户在主模型上白等。实测 coder 系列通常 1~3 秒内开始输出。
+    first-token-seconds: 45
+    # 分级路由的目标模型：同一个请求按任务复杂度落到不同档位。
+    # 旗舰档用 coder-next：平台真实提示词下 3 轮对照，它比 coder-plus 更快（13.3s vs 14.3s）
+    # 且同样时间产出翻倍（13899 vs 6773 字符）。
+    models:
+      flagship: ${CODECANVAS_MODEL_FLAGSHIP:qwen3-coder-next}
+      standard: ${CODECANVAS_MODEL_STANDARD:qwen3-coder-plus}
+      light: ${CODECANVAS_MODEL_LIGHT:qwen3-coder-flash}
+    # 单价（元/千 token）。这些是**占位估算值**，成本看板据此计算；
+    # 要对外引用成本数字前，请照搬厂商价目表把它改成真实价格。
+    # 约束：同一个模型出现在多个档位时，各档位单价必须一致，否则同一笔调用会被算出两个成本。
+    pricing:
+      flagship-input: 0.008
+      flagship-output: 0.032
+      standard-input: 0.004
+      standard-output: 0.016
+      light-input: 0.0005
+      light-output: 0.002
+
+logging:
+  charset:
+    console: UTF-8
+    file: UTF-8
+  level:
+    root: INFO
+    com.codecanvas: INFO
