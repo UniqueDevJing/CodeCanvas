@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
-import { BrandMark, DeployIcon, GridIcon, PencilIcon, PlusIcon } from './icons';
+import { BrandMark, DeployIcon, FolderIcon, GridIcon, PencilIcon, PlusIcon } from './icons';
 import './TopBar.css';
 
-// 顶栏只保留用户真正需要的事：新建、作品广场、项目名、发布。
+// 顶栏只保留用户真正需要的事：新建、我的项目、作品广场、项目名、发布。
 // 模型名/档位/用量这些是内部实现细节，不该出现在产品界面上。
 interface TopBarProps {
   projectName: string;
   onRename: (name: string) => void;
   onNewProject: () => void;
+  onOpenProjects: () => void;
   onOpenGallery: () => void;
   onDeploy: () => void;
   deployed: boolean;
@@ -18,6 +19,7 @@ export function TopBar({
   projectName,
   onRename,
   onNewProject,
+  onOpenProjects,
   onOpenGallery,
   onDeploy,
   deployed,
@@ -40,7 +42,11 @@ export function TopBar({
       </div>
 
       <div className="topbar-right">
-        <button type="button" className="btn" onClick={onOpenGallery}>
+        <button type="button" className="btn" onClick={onOpenProjects} title="我做过的全部项目">
+          <FolderIcon size={15} />
+          我的项目
+        </button>
+        <button type="button" className="btn" onClick={onOpenGallery} title="已经发布出来的作品">
           <GridIcon size={15} />
           作品广场
         </button>

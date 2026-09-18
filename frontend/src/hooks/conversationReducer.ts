@@ -247,6 +247,18 @@ export function conversationReducer(
       return { ...patchActive(state, (m) => ({ ...m, finished: true })), streaming: false, activeAgentId: null };
 
     case 'project/loaded':
+      // 切换到另一个已有项目：对话、质检、用量都属于上一个项目，必须一起清掉，
+      // 否则会出现"预览是这个项目、对话还停在上个项目"的错乱。
+      // 回滚（project/versions）不能走这条分支——回滚要保留当前对话。
+      return {
+        ...applyProjectDetail(state, action.detail),
+        messages: [],
+        activeAgentId: null,
+        quality: [],
+        tokens: null,
+        modelTier: 'STANDARD',
+      };
+
     case 'project/versions':
       return applyProjectDetail(state, action.detail);
 

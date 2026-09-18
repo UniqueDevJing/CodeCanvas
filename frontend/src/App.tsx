@@ -8,11 +8,12 @@ import { ChatPanel } from './components/ChatPanel';
 import { DeployDialog } from './components/DeployDialog';
 import { GalleryView } from './components/GalleryView';
 import { PreviewPanel } from './components/PreviewPanel';
+import { ProjectListView } from './components/ProjectListView';
 import { RuntimeErrorBanner } from './components/RuntimeErrorBanner';
 import type { RuntimeBannerState } from './components/RuntimeErrorBanner';
 import { Toast } from './components/Toast';
 import { TopBar } from './components/TopBar';
-import { activateVersion, buildShareUrl, deployProject } from './api/projects';
+import { activateVersion, buildShareUrl, deployProject, fetchProject } from './api/projects';
 import { conversationReducer, createInitialState } from './hooks/conversationReducer';
 import { useAgentStream } from './hooks/useAgentStream';
 import { createId } from './utils/format';
@@ -79,6 +80,7 @@ export default function App() {
   const [deploying, setDeploying] = useState(false);
   const [shareUrl, setShareUrl] = useState('');
   const [galleryOpen, setGalleryOpen] = useState(false);
+  const [projectsOpen, setProjectsOpen] = useState(false);
   const [previewCollapsed, setPreviewCollapsed] = useState(false);
   const [previewFull, setPreviewFull] = useState(false);
   const [previewWidth, setPreviewWidth] = useState(readStoredPreviewWidth);
@@ -254,8 +256,35 @@ export default function App() {
     }
     dispatch({ type: 'project/new' });
     setGalleryOpen(false);
+    setProjectsOpen(false);
     showToast('已清空会话，说说你想要的新应用吧');
   }, [showToast]);
+
+  /**
+   * 从「我的项目」打开一个已存在的项目。
+   *
+   * 生成中途切走会让流式结果落到错误的会话上，所以正在生成时直接拦掉。
+   */
+  const handleOpenProject = useCallback(
+    async (projectId: string) => {
+      if (stateRef.current.streaming) {
+        showToast('正在生成中，先等这一轮结束再切换项目');
+        return;
+      }
+      try {
+        const detail = await fetchProject(projectId);
+        dispatch({ type: 'project/loaded', detail });
+        setProjectsOpen(false);
+        setGalleryOpen(false);
+        // 换了项目，之前的自动修复计数不该带过来
+        setHealCounts({});
+        showToast(`已打开「${detail.name}」`);
+      } catch {
+        showToast('打开项目失败，请稍后重试');
+      }
+    },
+    [showToast],
+  );
 
   const handleDeploy = useCallback(async () => {
     const projectId = stateRef.current.projectId;
@@ -417,6 +446,7 @@ export default function App() {
         projectName={state.projectName}
         onRename={handleRename}
         onNewProject={handleNewProject}
+        onOpenProjects={() => setProjectsOpen(true)}
         onOpenGallery={() => setGalleryOpen(true)}
         onDeploy={handleDeployClick}
         deployed={state.deployed}
@@ -432,7 +462,13 @@ export default function App() {
         onClose={() => setDeployOpen(false)}
       />
 
-      {galleryOpen ? (
+      {projectsOpen ? (
+        <ProjectListView
+          open={projectsOpen}
+          onClose={() => setProjectsOpen(false)}
+          onOpenProject={handleOpenProject}
+        />
+      ) : galleryOpen ? (
         <GalleryView open={galleryOpen} onClose={() => setGalleryOpen(false)} />
       ) : (
         <main

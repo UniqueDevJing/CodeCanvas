@@ -1,0 +1,135 @@
+/* ============================ 我的项目列表 ============================
+   与作品广场并排的另一个入口：那边是"已发布的"，这边是"我做过的全部"。
+   用行列表而不是卡片网格——用户是来按名字找东西的，行更好扫。 */
+
+.project-list {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+
+.project-list-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 22px 28px 16px;
+}
+
+.project-list-title {
+  margin: 0 0 4px;
+  font-size: 19px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.project-list-sub {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.project-list-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 28px 28px;
+}
+
+.project-list-hint {
+  padding: 48px 0;
+  text-align: center;
+  font-size: 13.5px;
+  color: var(--muted);
+}
+
+.project-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.project-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 14px 0 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.project-row:hover {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-pop);
+}
+
+/* 整行都是打开动作，所以主体做成 button，保证键盘可达 */
+.project-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  padding: 13px 14px;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  text-align: left;
+}
+
+.project-row-main:disabled {
+  cursor: default;
+}
+
+.project-row-name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.project-row-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.project-row-meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.project-badge {
+  padding: 1px 7px;
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+/* 右侧动作只是视觉提示，真正的点击目标是整行主体 */
+.project-row-action {
+  flex: 0 0 auto;
+  color: var(--accent-text);
+  font-size: 12.5px;
+  font-weight: 500;
+}

@@ -13,11 +13,18 @@ public final class ProjectDtos {
     private ProjectDtos() {
     }
 
-    public record ProjectSummary(String id, String name, Instant updatedAt, int versionCount) {
+    /**
+     * 项目列表项。
+     *
+     * <p>带上 {@code deployed} 是为了让"我的项目"能标出哪些已经发布过——
+     * 否则用户分不清哪些作品对外能访问，也找不到已经分享出去的链接。
+     */
+    public record ProjectSummary(String id, String name, Instant updatedAt, int versionCount, boolean deployed) {
 
         public static ProjectSummary of(Project project) {
             return new ProjectSummary(project.id(), project.name(), project.updatedAt(),
-                    project.versions() == null ? 0 : project.versions().size());
+                    project.versions() == null ? 0 : project.versions().size(),
+                    project.deployed());
         }
     }
 

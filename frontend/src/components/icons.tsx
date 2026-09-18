@@ -187,6 +187,15 @@ export function ShrinkIcon(props: IconProps) {
   );
 }
 
+/** 文件夹：我的项目 */
+export function FolderIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M2.6 4.8a1.4 1.4 0 0 1 1.4-1.4h2.1l1.5 1.7h4.4a1.4 1.4 0 0 1 1.4 1.4v5a1.4 1.4 0 0 1-1.4 1.4H4a1.4 1.4 0 0 1-1.4-1.4z" />
+    </Svg>
+  );
+}
+
 export function GridIcon(props: IconProps) {
   return (
     <Svg {...props}>

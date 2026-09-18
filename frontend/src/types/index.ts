@@ -165,6 +165,8 @@ export interface ProjectSummary {
   name: string;
   updatedAt: string;
   versionCount: number;
+  /** 是否发布过（发布过的才有公开链接） */
+  deployed: boolean;
 }
 
 export interface ProjectDetail {
