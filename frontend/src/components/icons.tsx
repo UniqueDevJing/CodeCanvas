@@ -30,21 +30,47 @@ function Svg({ size = 16, className, children, strokeWidth = 1.4 }: SvgProps) {
   );
 }
 
-export function BrandMark() {
+/**
+ * CodeCanvas 品牌标识。
+ *
+ * 构成：渐变圆角方块（画布）＋白色字母 C（CodeCanvas）＋右上角星光（"一句话生成"）。
+ * 字母给识别度，星光给"会自己长出来"的暗示——两者合起来才是这个产品在做的事。
+ * 32 网格画好后按 size 缩放，24px 下仍然清楚。
+ */
+export function BrandMark({ size = 24 }: { size?: number }) {
   return (
     <span className="brand-mark">
       <svg
-        width={13}
-        height={13}
-        viewBox="0 0 16 16"
+        width={size}
+        height={size}
+        viewBox="0 0 32 32"
         fill="none"
-        stroke="#ffffff"
-        strokeWidth={1.8}
-        strokeLinecap="round"
-        strokeLinejoin="round"
         aria-hidden="true"
+        focusable="false"
       >
-        <path d="M6.4 5.4 3.8 8l2.6 2.6M9.6 5.4 12.2 8l-2.6 2.6" />
+        <defs>
+          <linearGradient id="cc-brand-grad" x1="2" y1="1" x2="30" y2="31" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stopColor="#8b6bff" />
+            <stop offset="0.52" stopColor="#5b46f2" />
+            <stop offset="1" stopColor="#8b3af0" />
+          </linearGradient>
+        </defs>
+
+        <rect width="32" height="32" rx="10" fill="url(#cc-brand-grad)" />
+
+        {/* C：右侧留口，给星光腾位置 */}
+        <path
+          d="M19.24 10.94A6.6 6.6 0 1 0 19.24 21.06"
+          stroke="#ffffff"
+          strokeWidth="2.7"
+          strokeLinecap="round"
+        />
+
+        {/* 星光 */}
+        <path
+          d="M24.6 7.9l0.92 2.24 2.24 0.92-2.24 0.92-0.92 2.24-0.92-2.24-2.24-0.92 2.24-0.92z"
+          fill="#ffffff"
+        />
       </svg>
     </span>
   );

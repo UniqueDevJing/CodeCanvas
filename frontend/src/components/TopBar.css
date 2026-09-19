@@ -6,8 +6,11 @@
   justify-content: space-between;
   gap: 16px;
   padding: 0 16px;
-  background: var(--panel);
-  border-bottom: 1px solid var(--border);
+  /* 磨砂玻璃：让底下的极光透上来，比实心白更轻 */
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(18px) saturate(170%);
+  -webkit-backdrop-filter: blur(18px) saturate(170%);
+  border-bottom: 1px solid rgba(233, 230, 247, 0.9);
   z-index: 20;
 }
 
@@ -35,14 +38,26 @@
   flex: 0 0 auto;
 }
 
+/* logo 自带渐变方块，这里只当尺寸容器 */
 .brand-mark {
-  width: 22px;
-  height: 22px;
-  border-radius: 6px;
-  background: var(--accent);
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(91, 70, 242, 0.28);
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.brand:hover .brand-mark {
+  transform: translateY(-1px) rotate(-3deg);
+  box-shadow: 0 4px 12px rgba(91, 70, 242, 0.36);
+}
+
+.brand-mark svg {
+  display: block;
 }
 
 .brand-name {

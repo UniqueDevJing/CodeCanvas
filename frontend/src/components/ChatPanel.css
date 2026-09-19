@@ -7,7 +7,8 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: var(--panel);
+  /* 透明——极光背景直接透上来，消息气泡自己带白底保证可读 */
+  background: transparent;
 }
 
 /* -------------------------------- 消息流 -------------------------------- */
@@ -549,27 +550,55 @@
 /* -------------------------------- 空状态 -------------------------------- */
 
 .chat-empty {
+  position: relative;
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 10px;
   padding: 32px 24px;
+  overflow: hidden;
   text-align: center;
+}
+
+/* 巨大的半透明水印，给空页面一点纵深（参考秒哒背后那行大字） */
+.chat-empty-watermark {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 0;
+  font-size: clamp(40px, 7vw, 116px);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  color: rgba(91, 70, 242, 0.055);
+  user-select: none;
+  pointer-events: none;
+}
+
+.chat-empty-inner {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
 }
 
 .chat-empty-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
+  width: 40px;
+  height: 40px;
   border: 1px solid var(--accent-border);
-  border-radius: 9px;
-  background: var(--accent-soft);
-  color: var(--accent-text);
+  border-radius: 13px;
+  background: var(--panel);
+  color: var(--accent);
+  box-shadow: var(--shadow-soft);
 }
 
 .chat-empty-title {

@@ -1,32 +1,44 @@
 /* ==========================================================================
    CodeCanvas 主题变量与基础原子样式
-   浅色主题 · 单一强调色 · 1px 细线 · 克制的密度
+   浅色主题 · 单一强调色 · 紫罗兰基调 · 极光背景
    ========================================================================== */
 
 :root {
-  /* 表面 */
-  --bg: #f7f7f5;
+  /* 表面 —— 底色带一点薰衣草味，好跟极光背景接得上 */
+  --bg: #f7f5ff;
   --panel: #ffffff;
-  --panel-sub: #fbfbfa;
-  --panel-sunken: #f2f2ef;
+  --panel-sub: #fbfaff;
+  --panel-sunken: #f3f1fd;
 
   /* 描边 */
-  --border: #e8e8e5;
-  --border-strong: #d9d9d5;
+  --border: #e9e6f7;
+  --border-strong: #d7d2ee;
 
   /* 文本 */
-  --text: #1a1a18;
-  --text-2: #8a8a85;
-  --text-3: #a9a9a4;
+  --text: #1b1a2e;
+  --text-2: #6f6b8a;
+  --text-3: #9a96b2;
 
-  /* 强调色（全站唯一） */
-  --accent: #4f46e5;
-  --accent-hover: #443bd4;
-  --accent-press: #3b33bd;
-  --accent-soft: #eeeffc;
-  --accent-soft-2: #e4e6fa;
-  --accent-border: #d6d9f8;
-  --accent-text: #3f37c9;
+  /* 强调色（全站唯一）—— 紫罗兰，与秒哒同一调性 */
+  --accent: #5b46f2;
+  --accent-hover: #4d36e6;
+  --accent-press: #402bc9;
+  --accent-soft: #f0edff;
+  --accent-soft-2: #e5e0ff;
+  --accent-border: #ddd6ff;
+  --accent-text: #4b34d8;
+  /* 用于主按钮、logo、进度条等需要一点"光感"的地方 */
+  --accent-grad: linear-gradient(135deg, #7c5cff 0%, #5b46f2 52%, #8b3af0 100%);
+  --accent-grad-hover: linear-gradient(135deg, #6f4dff 0%, #4d36e6 52%, #7d2ce6 100%);
+
+  /* 极光背景：多层径向渐变叠加（参考秒哒）
+     比原站淡一档——那边是展示页，这里是天天用的工作台，文字可读性优先 */
+  --aurora:
+    radial-gradient(880px 600px at 0% 0%, rgba(71, 227, 255, 0.34), rgba(0, 0, 0, 0) 68%),
+    radial-gradient(980px 680px at 100% 0%, rgba(100, 73, 255, 0.30), rgba(0, 0, 0, 0) 66%),
+    radial-gradient(720px 500px at 54% 6%, rgba(196, 188, 255, 0.46), rgba(0, 0, 0, 0) 68%),
+    radial-gradient(800px 620px at 4% 100%, rgba(51, 28, 254, 0.18), rgba(0, 0, 0, 0) 66%),
+    radial-gradient(880px 660px at 98% 96%, rgba(170, 79, 255, 0.24), rgba(0, 0, 0, 0) 66%);
 
   /* 语义色（仅用于状态，不做装饰） */
   --warn-bg: #fff9e8;
@@ -36,11 +48,21 @@
   --danger-soft: #fdf0ee;
   --ok: #2f7a52;
 
+  /* 兼容别名。
+     早期几个组件写的是 --muted / --warn / --surface-2，但这三个变量一直没定义，
+     var() 取不到值就静默回退（color 会变成继承色）——副文本该灰的一直没灰。
+     在这里补上，比逐个改组件稳。 */
+  --muted: var(--text-2);
+  --warn: var(--warn-text);
+  --surface-2: var(--panel-sunken);
+
   /* 结构 */
-  --radius-sm: 8px;
-  --radius: 12px;
+  --radius-sm: 12px;
+  --radius: 16px;
+  --radius-lg: 22px;
   --radius-pill: 999px;
-  --shadow-pop: 0 6px 20px rgba(24, 24, 20, 0.09), 0 1px 3px rgba(24, 24, 20, 0.06);
+  --shadow-soft: 0 2px 10px rgba(43, 32, 102, 0.05);
+  --shadow-pop: 0 12px 34px rgba(43, 32, 102, 0.11), 0 2px 8px rgba(43, 32, 102, 0.05);
   --topbar-h: 56px;
   /* --preview-w 不在这里定义：预览区宽度由 App.tsx 按用户拖拽结果写到 .app-main 上，
      默认值与上下限也都在那里（PREVIEW_MIN_W / CHAT_MIN_W / defaultPreviewWidth）。 */
@@ -65,7 +87,12 @@ body,
 
 body {
   margin: 0;
-  background: var(--bg);
+  /* 极光背景铺在最底层，固定不动——滚动内容时背景不跟着跑 */
+  background-color: var(--bg);
+  background-image: var(--aurora);
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+  background-size: cover;
   color: var(--text);
   font-family: var(--font);
   font-size: 14px;
@@ -98,14 +125,14 @@ button {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #d8d8d3;
+  background: #d5cff0;
   border: 3px solid transparent;
   background-clip: content-box;
   border-radius: var(--radius-pill);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #c2c2bc;
+  background: #bdb4e6;
   background-clip: content-box;
 }
 
@@ -121,20 +148,26 @@ button {
   justify-content: center;
   gap: 6px;
   height: 32px;
-  padding: 0 12px;
+  padding: 0 14px;
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-pill);
   background: var(--panel);
   color: var(--text);
   font-size: 13px;
   font-weight: 500;
   white-space: nowrap;
-  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease,
+    box-shadow 0.15s ease, transform 0.1s ease;
 }
 
 .btn:hover:not(:disabled) {
   background: var(--panel-sunken);
   border-color: var(--border-strong);
+  box-shadow: var(--shadow-soft);
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(0.5px);
 }
 
 .btn:disabled {
@@ -143,18 +176,22 @@ button {
 }
 
 .btn-primary {
-  background: var(--accent);
-  border-color: var(--accent);
+  border-color: transparent;
+  background-image: var(--accent-grad);
+  background-color: var(--accent);
   color: #fff;
+  box-shadow: 0 2px 10px rgba(91, 70, 242, 0.24);
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: var(--accent-hover);
-  border-color: var(--accent-hover);
+  border-color: transparent;
+  background-image: var(--accent-grad-hover);
+  background-color: var(--accent-hover);
+  box-shadow: 0 4px 16px rgba(91, 70, 242, 0.32);
 }
 
 .btn-primary:active:not(:disabled) {
-  background: var(--accent-press);
+  background-color: var(--accent-press);
 }
 
 .btn-ghost {
@@ -164,14 +201,15 @@ button {
 }
 
 .btn-ghost:hover:not(:disabled) {
-  background: var(--panel-sunken);
+  background: rgba(91, 70, 242, 0.08);
   border-color: transparent;
-  color: var(--text);
+  box-shadow: none;
+  color: var(--accent-text);
 }
 
 .btn-sm {
   height: 26px;
-  padding: 0 9px;
+  padding: 0 10px;
   font-size: 12px;
 }
 
@@ -223,13 +261,13 @@ button {
 
 @keyframes cc-pulse-ring {
   0% {
-    box-shadow: 0 0 0 0 rgba(79, 70, 229, 0.28);
+    box-shadow: 0 0 0 0 rgba(91, 70, 242, 0.28);
   }
   70% {
-    box-shadow: 0 0 0 6px rgba(79, 70, 229, 0);
+    box-shadow: 0 0 0 6px rgba(91, 70, 242, 0);
   }
   100% {
-    box-shadow: 0 0 0 0 rgba(79, 70, 229, 0);
+    box-shadow: 0 0 0 0 rgba(91, 70, 242, 0);
   }
 }
 

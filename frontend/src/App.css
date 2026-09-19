@@ -2,7 +2,8 @@
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: var(--bg);
+  /* 不铺底色：让 body 上的极光背景透上来 */
+  background: transparent;
   overflow: hidden;
 }
 
