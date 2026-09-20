@@ -30,27 +30,47 @@ log()  { printf '\033[1;34m[codecanvas]\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[codecanvas]\033[0m %s\n' "$*"; }
 die()  { printf '\033[1;31m[codecanvas]\033[0m %s\n' "$*" >&2; exit 1; }
 
-# ---------------------------------------------------------------- 1. Java 17
+# ---------------------------------------------------------------- 1. Java
+#
+# 优先装 Java 21：后端的 Agent 线程池在 21+ 才会走虚拟线程（见 CodeCanvasConfig）。
+# 17 也能跑，只是退回有界平台线程池——所以这里尽量要 21，装不上才退回 17 并明确告警。
+
+WANT_MAJOR=21
+
+java_major() { "$1" -version 2>&1 | head -1 | sed -n 's/.*version "\([0-9]*\).*/\1/p'; }
+
+# 直接按安装路径挑，避免装了 21 之后 command -v java 仍指向 17
+pick_java() {
+  for cand in /usr/lib/jvm/java-21-openjdk-amd64/bin/java \
+              /usr/lib/jvm/java-17-openjdk-amd64/bin/java; do
+    [ -x "$cand" ] && { printf '%s' "$cand"; return; }
+  done
+  command -v java || true
+}
 
 JAVA_BIN=""
-if command -v java >/dev/null 2>&1; then
-  if java -version 2>&1 | grep -qE '"(1[7-9]|[2-9][0-9])'; then
-    JAVA_BIN="$(command -v java)"
-    log "已检测到可用 Java：$(java -version 2>&1 | head -1)"
-  else
-    warn "现有 Java 版本过低，将安装 JDK 17"
-  fi
+HAVE_MAJOR="$(java_major "$(command -v java || echo /usr/bin/java)" 2>/dev/null || true)"
+if [ -n "$HAVE_MAJOR" ] && [ "$HAVE_MAJOR" -ge "$WANT_MAJOR" ] 2>/dev/null; then
+  JAVA_BIN="$(command -v java)"
+  log "已检测到 Java $HAVE_MAJOR，虚拟线程可用"
+elif [ -n "$HAVE_MAJOR" ]; then
+  log "现有 Java $HAVE_MAJOR 可用，但虚拟线程需要 21+，尝试安装 JDK 21…"
 fi
 
 if [ -z "$JAVA_BIN" ]; then
-  log "安装 JDK 17（headless JRE 即可，后端是自包含 fat jar）…"
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -qq
-  apt-get install -y -qq --no-install-recommends openjdk-17-jre-headless
-  JAVA_BIN="$(command -v java || true)"
+  if apt-get install -y -qq --no-install-recommends openjdk-21-jre-headless >/dev/null 2>&1; then
+    JAVA_BIN="$(pick_java)"
+    log "已安装 JDK 21：$("$JAVA_BIN" -version 2>&1 | head -1)"
+  else
+    warn "openjdk-21 安装失败，退回 17 —— 虚拟线程不会启用，平台线程池仍有界可用"
+    apt-get install -y -qq --no-install-recommends openjdk-17-jre-headless >/dev/null 2>&1
+    JAVA_BIN="$(pick_java)"
+  fi
 fi
-[ -n "$JAVA_BIN" ] && [ -x "$JAVA_BIN" ] || die "Java 安装失败，请手动安装 openjdk-17 后重跑"
-log "使用 Java：$JAVA_BIN"
+[ -n "$JAVA_BIN" ] && [ -x "$JAVA_BIN" ] || die "Java 安装失败，请手动安装 openjdk-21 后重跑"
+log "使用 Java：$JAVA_BIN（$("$JAVA_BIN" -version 2>&1 | head -1)）"
 
 # ---------------------------------------------------------------- 2. 目录与密钥
 

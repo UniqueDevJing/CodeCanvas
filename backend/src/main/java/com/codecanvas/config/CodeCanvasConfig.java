@@ -64,6 +64,17 @@ public class CodeCanvasConfig {
         }
     }
 
+    /**
+     * 实际运行的 Java 版本。
+     *
+     * <p>线程模型的自述里带上它：光说"虚拟线程"看不出跑在哪个 JDK 上，
+     * 带上版本号才能自证——这也是升级 JDK 之后一眼能确认生效的地方。
+     */
+    public static String runtimeJavaVersion() {
+        String v = System.getProperty("java.version", "");
+        return v.isBlank() ? "未知" : v;
+    }
+
     private ThreadFactory namedFactory(String prefix) {
         AtomicInteger counter = new AtomicInteger();
         return runnable -> {

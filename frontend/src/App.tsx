@@ -511,6 +511,7 @@ export default function App() {
             versions={state.preview.versions}
             versionLabel={state.preview.versionLabel}
             quality={state.quality}
+            tokens={state.tokens}
             rollingBack={rollingBack}
             collapsed={previewCollapsed}
             full={previewFull}

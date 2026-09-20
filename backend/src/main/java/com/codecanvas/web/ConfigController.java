@@ -56,7 +56,9 @@ public class ConfigController {
                         + "由于隔离源限制，页面内的 localStorage 会被浏览器拒绝，"
                         + "生成代码必须做降级处理——这正是自检闭环要覆盖的真实场景。",
                 dockerSandbox.unavailableReason(),
-                CodeCanvasConfig.virtualThreadSupported() ? "虚拟线程（JDK 21+）" : "有界平台线程池（JDK 17）",
+                CodeCanvasConfig.virtualThreadSupported()
+                        ? "虚拟线程（Java " + CodeCanvasConfig.runtimeJavaVersion() + "）"
+                        : "有界平台线程池（Java " + CodeCanvasConfig.runtimeJavaVersion() + "，虚拟线程需 21+）",
                 CodeCanvasConfig.virtualThreadSupported(),
                 storageDir,
                 "文件系统仓储（ProjectRepository 已抽象，可替换为 MySQL 实现）");

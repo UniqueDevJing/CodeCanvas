@@ -81,10 +81,52 @@ export interface DeltaEvent {
 export interface TokensInfo {
   promptTokens: number;
   completionTokens: number;
+  /** 本轮实际花费 */
   cost: number;
+  /** 本轮若全部按旗舰档单价计费的花费（反事实对照） */
+  baselineCost: number;
+  savedPercent: number;
   totalCost: number;
+  totalBaselineCost: number;
+  totalSavedPercent: number;
   tier: ModelTier;
   model: string;
+}
+
+/** 单个档位的调用分布 */
+export interface TierUsageLine {
+  tier: ModelTier;
+  label: string;
+  calls: number;
+  inputTokens: number;
+  outputTokens: number;
+  cost: number;
+  baselineCost: number;
+}
+
+/** 计算所用的单价，随台账返回以便复核 */
+export interface UsagePricing {
+  flagshipInput: number;
+  flagshipOutput: number;
+  standardInput: number;
+  standardOutput: number;
+  lightInput: number;
+  lightOutput: number;
+}
+
+/** GET /api/usage —— 成本台账 */
+export interface UsageLedger {
+  calls: number;
+  inputTokens: number;
+  outputTokens: number;
+  cost: number;
+  baselineCost: number;
+  savedCost: number;
+  savedPercent: number;
+  tiers: TierUsageLine[];
+  pricing: UsagePricing;
+  /** 数字成立的前提；必须跟比例一起展示 */
+  assumption: string;
 }
 
 export interface HealEvent {

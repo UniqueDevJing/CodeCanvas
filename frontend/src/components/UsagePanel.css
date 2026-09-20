@@ -1,0 +1,162 @@
+/* ============================== 成本台账 ==============================
+   分级路由的收益要有对照才成立：实际花了多少 / 全走旗舰会花多少。
+   所以这里的主角不是"实际成本"，而是两个数的落差。 */
+
+.usage-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.usage-hint {
+  padding: 40px 8px;
+  text-align: center;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--muted);
+}
+
+/* ---------------------------- 三个关键数字 ---------------------------- */
+
+.usage-hero {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.usage-hero-col {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 12px 13px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+.usage-hero-value {
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.usage-hero-value.is-baseline {
+  color: var(--text-3);
+  font-weight: 500;
+}
+
+.usage-hero-value.is-save {
+  color: var(--ok);
+}
+
+.usage-hero-label {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+/* ------------------------------ 前提说明 ------------------------------ */
+
+.usage-assumption {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: 11.5px;
+  line-height: 1.7;
+}
+
+/* -------------------------------- 分组 -------------------------------- */
+
+.usage-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.usage-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.usage-section-title {
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.usage-section-meta {
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.usage-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.usage-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  font-size: 12px;
+}
+
+/* 单价行只有两个字段 */
+.usage-row.is-price {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.usage-tier {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.usage-num {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--text-2);
+}
+
+.usage-dim {
+  color: var(--muted);
+}
+
+.usage-save {
+  color: var(--ok);
+  font-weight: 500;
+}
+
+.usage-foot {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-3);
+  text-align: center;
+}

@@ -337,13 +337,18 @@ public class AgentOrchestrator {
                             RouteDecision route,
                             int injectedTokens,
                             int rawTokens) {
-        TokenMeter.Snapshot total = run.snapshot();
+        TokenMeter.Snapshot runTotal = run.snapshot();
+        TokenMeter.Snapshot global = meter.globalSnapshot();
         ContextAssembler.ContextReport report = ContextAssembler.report(injectedTokens, rawTokens);
         return new UsageView(
                 call.response().inputTokens(),
                 call.response().outputTokens(),
-                total.cost(),
-                meter.globalSnapshot().cost(),
+                runTotal.cost(),
+                runTotal.baselineCost(),
+                TokenMeter.savedPercent(runTotal.cost(), runTotal.baselineCost()),
+                global.cost(),
+                global.baselineCost(),
+                TokenMeter.savedPercent(global.cost(), global.baselineCost()),
                 call.tier().name(),
                 call.response().model(),
                 call.provider(),

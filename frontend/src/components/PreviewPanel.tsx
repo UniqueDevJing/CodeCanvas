@@ -3,10 +3,11 @@ import { CodeViewer } from './CodeViewer';
 import { PreviewStage } from './PreviewStage';
 import { PreviewToolbar } from './PreviewToolbar';
 import { QualityPanel } from './QualityPanel';
+import { UsagePanel } from './UsagePanel';
 import { VersionTimeline } from './VersionTimeline';
 import { ChevronDownIcon, SparkIcon } from './icons';
 import type { DeviceKind, PreviewTab } from './previewTypes';
-import type { ProjectFile, QualityCheck, VersionInfo } from '../types';
+import type { ProjectFile, QualityCheck, TokensInfo, VersionInfo } from '../types';
 import './PreviewPanel.css';
 
 interface PreviewPanelProps {
@@ -15,6 +16,8 @@ interface PreviewPanelProps {
   versions: VersionInfo[];
   versionLabel: string | null;
   quality: QualityCheck[];
+  /** 用量面板的数据源与刷新触发器；没有它也能用，只是一直显示累计值 */
+  tokens: TokensInfo | null;
   rollingBack: boolean;
   collapsed: boolean;
   full: boolean;
@@ -25,7 +28,7 @@ interface PreviewPanelProps {
 }
 
 /**
- * 右侧辅助区：预览 / 代码 / 质检 / 版本。
+ * 右侧辅助区：预览 / 代码 / 质检 / 版本 / 用量。
  *
  * 它可以整块收起——预览是"看结果"的地方，不该跟对话抢空间。
  */
@@ -35,6 +38,7 @@ export function PreviewPanel({
   versions,
   versionLabel,
   quality,
+  tokens,
   rollingBack,
   collapsed,
   full,
@@ -124,6 +128,8 @@ export function PreviewPanel({
             />
           </div>
         )}
+
+        {tab === 'usage' && <UsagePanel tokens={tokens} />}
       </div>
     </section>
   );
