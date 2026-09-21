@@ -16,14 +16,20 @@ import org.springframework.stereotype.Component;
  * <p>存在的意义：分级路由如果看不到成本，就等于没有优化依据。这里对每次调用按档位单价累计，
  * 路由策略的收益才是可观测、可验证的。
  *
- * <p><b>反事实对照</b>：每次调用除了记实际花费，还会按「旗舰档单价」对同一批 token 再算一笔
- * {@code baselineCost}。两条曲线相减就是分级路由省下的钱。只报"我做了分级路由"没有说服力，
- * 能说出"同一批 token 若全走旗舰要花多少、实际花了多少"才算把优化量化了。
+ * <p><b>反事实对照</b>：每次调用除了记实际花费，还会按「池里单价最高的那一档」对同一批 token
+ * 再算一笔 {@code baselineCost}。两条曲线相减，就是"没有做成本优化"时大概会多花多少。
+ *
+ * <p><b>为什么基准按单价取、而不是按"旗舰档"取</b>：档位名（旗舰/标准/轻量）是路由标签，
+ * 不是价格标签。实测这个 coder 系列里，"旗舰"档的 {@code coder-next} 反而**最便宜**
+ * （1 元/百万，而标准档的 coder-plus 是 4 元）——按名字取基准会把结论算反。
+ * 所以基准取"实际单价最高的档位"，并且把它是谁一起返回。
  *
  * <p><b>这个数字的边界</b>（必须一起展示，否则就是假数字）：
  * <ul>
- *   <li>节省比例取决于各档位单价之比，而单价来自 {@code llm.pricing} 配置——
- *       配置成占位值时，绝对值不可对外引用，比例也只在该配置下成立；</li>
+ *   <li>比例取决于各档位单价之比，而单价来自 {@code llm.pricing} 配置；
+ *       该配置现已按厂商真实价目表录入，并注明来源与核对日期；</li>
+ *   <li>阶梯计价未细分：厂商按单次请求输入 token 分档定价，这里只取单一单价，
+ *       长输入场景会低估成本；</li>
  *   <li>离线引擎不产生费用，两条曲线都记 0，不会污染结果；</li>
  *   <li>同样的 token 走不同档位，产出其实不一样。这个对照回答的是
  *       「假设质量不掉的前提下省了多少」，不回答「换档会不会变差」。</li>
@@ -35,22 +41,13 @@ public class TokenMeter {
     /** 离线引擎的提供方标识：它不产生真实费用。 */
     private static final String OFFLINE_PROVIDER = "mock";
 
-    /** 计算反事实所用的基准档位：全部按旗舰档计费。 */
-    private static final ModelTier BASELINE_TIER = ModelTier.FLAGSHIP;
-
-    /** 展示给用户的假设说明，跟着数字一起走，避免被单独引用。 */
-    public static final String ASSUMPTION =
-            "假设同一批 token 全部按旗舰档单价计费，再与实际花费对照。"
-            + "比例取决于各档位单价之比（llm.pricing 配置）；若那里是占位价，请先换成厂商真实价目表。"
-            + "离线引擎不产生费用，不计入。";
-
     private final LlmProperties properties;
 
     private final AtomicLong globalInput = new AtomicLong();
     private final AtomicLong globalOutput = new AtomicLong();
     private final AtomicLong globalCalls = new AtomicLong();
     private final DoubleAdder globalCost = new DoubleAdder();
-    /** 反事实成本：同样的 token 若全部走旗舰档会花多少。 */
+    /** 反事实成本：同样的 token 若走了池里最贵的档位会花多少。 */
     private final DoubleAdder globalBaselineCost = new DoubleAdder();
     /** 各档位的调用分布：回答"省在哪一档"，这部分与单价无关，是客观事实。 */
     private final Map<ModelTier, TierStat> tierStats = new EnumMap<>(ModelTier.class);
@@ -67,7 +64,7 @@ public class TokenMeter {
         int input = response.inputTokens();
         int output = response.outputTokens();
         double cost = costOf(tier, input, output);
-        double baseline = costOf(BASELINE_TIER, input, output);
+        double baseline = baselineCost(input, output);
         // 离线引擎不产生真实费用，两条曲线都记 0，避免把"模拟值"当成真金白银展示
         if (OFFLINE_PROVIDER.equalsIgnoreCase(response.providerId())) {
             cost = 0;
@@ -110,15 +107,39 @@ public class TokenMeter {
 
         LlmProperties.Pricing p = properties.getPricing();
         PricingLine pricing = new PricingLine(p.getFlagshipInput(), p.getFlagshipOutput(),
-                p.getStandardInput(), p.getStandardOutput(), p.getLightInput(), p.getLightOutput());
+                p.getStandardInput(), p.getStandardOutput(), p.getLightInput(), p.getLightOutput(),
+                p.getBaselineInput(), p.getBaselineOutput());
 
         return new Ledger(calls, input, output, cost, baseline, baseline - cost,
-                savedPercent(cost, baseline), lines, pricing, ASSUMPTION);
+                savedPercent(cost, baseline), lines, pricing,
+                p.getBaselineNote(), assumption());
     }
 
     /** 估一次调用大概要花多少 token，用于上下文预算控制。 */
     public static int estimate(String text) {
         return TokenEstimator.estimate(text);
+    }
+
+    /**
+     * 反事实基准：这批 token 若按**参照价**计费会花多少。
+     *
+     * <p>参照价来自 {@code llm.pricing.baseline-*}，是一个显式声明的价格，不是某一档的实际单价。
+     * 默认值是改造前挂在标准档的 qwen3-coder-plus —— 也就是"没做选型修正时会走的那条路"。
+     */
+    private double baselineCost(int input, int output) {
+        LlmProperties.Pricing p = properties.getPricing();
+        return input / 1000.0 * p.getBaselineInput() + output / 1000.0 * p.getBaselineOutput();
+    }
+
+    /** 假设说明：跟数字一起返回，避免被脱离语境单独引用。 */
+    public String assumption() {
+        String note = properties.getPricing().getBaselineNote();
+        return "基准 = 同一批 token 按【" + (note == null || note.isBlank() ? "参照模型" : note) + "】的单价计费。"
+                + "这个基准回答的是「不做模型选型、按名字直觉挑一个会多花多少」，"
+                + "不是「分级路由省了多少」——实测这个 coder 系列里\"旗舰\"命名的 coder-next 反而最便宜，"
+                + "所以真正的收益来自**选型修正**，路由分流本身在这个模型池上几乎不产生价差。"
+                + "单价来自厂商价目表（coder 系列 0<Token≤32K 档），阶梯计价未细分。"
+                + "离线引擎不产生费用，不计入。";
     }
 
     /** 节省比例（0-100）。基准为 0 时返回 0，不做"看起来好看"的兜底。 */
@@ -175,6 +196,8 @@ public class TokenMeter {
                          double savedPercent,
                          List<TierLine> tiers,
                          PricingLine pricing,
+                         // 基准是谁（参照模型），它不对应某一档，所以要显式报出来
+                         String baselineNote,
                          String assumption) {
     }
 
@@ -186,7 +209,8 @@ public class TokenMeter {
     /** 计算所用的单价，随台账一起返回以便复核。 */
     public record PricingLine(double flagshipInput, double flagshipOutput,
                               double standardInput, double standardOutput,
-                              double lightInput, double lightOutput) {
+                              double lightInput, double lightOutput,
+                              double baselineInput, double baselineOutput) {
     }
 
     /** 请求级累计器。 */

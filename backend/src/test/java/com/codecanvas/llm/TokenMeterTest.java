@@ -10,8 +10,12 @@ import org.junit.jupiter.api.Test;
 /**
  * 成本反事实的算术。
  *
- * <p>这些断言同时也是"节省比例是怎么算出来的"的说明书：基准 = 同一批 token 按旗舰单价重算，
- * 节省 = (基准 - 实际) / 基准。算不出来（基准为 0）就老实返回 0，不做兜底修饰。
+ * <p>这些断言同时也是"节省比例是怎么算出来的"的说明书：
+ * 基准 = 同一批 token 按**显式声明的参照价**计费，节省 = (基准 - 实际) / 基准。
+ * 算不出来（基准为 0）就老实返回 0，不做兜底修饰。
+ *
+ * <p>其中 {@link #baselineIsDeclaredNotGuessed()} 钉住了一条容易算错的规则：
+ * 基准必须按**实际单价**取，不能按档位名取。
  */
 class TokenMeterTest {
 
@@ -23,28 +27,38 @@ class TokenMeterTest {
     }
 
     @Test
-    @DisplayName("走旗舰档时反事实与实际相等，节省为 0")
-    void flagshipHasNoSaving() {
+    @DisplayName("基准是显式声明的参照价，不跟着档位名走")
+    void baselineIsDeclaredNotGuessed() {
         meter.record(ModelTier.FLAGSHIP, resp(1000, 1000, "openai"));
-        TokenMeter.Ledger ledger = meter.ledger();
-        assertEquals(ledger.cost(), ledger.baselineCost(), 1e-9);
-        assertEquals(0.0, ledger.savedPercent(), 1e-9);
-    }
-
-    @Test
-    @DisplayName("走轻量档时，反事实按旗舰单价重算，比例可被外部复算")
-    void lightTierSavingIsRecomputable() {
-        meter.record(ModelTier.LIGHT, resp(1000, 1000, "openai"));
         TokenMeter.Ledger ledger = meter.ledger();
         LlmProperties.Pricing p = props.getPricing();
 
-        double expectedActual = p.getLightInput() + p.getLightOutput();
-        double expectedBaseline = p.getFlagshipInput() + p.getFlagshipOutput();
+        double actual = p.getFlagshipInput() + p.getFlagshipOutput();
+        double baseline = p.getBaselineInput() + p.getBaselineOutput();
+        assertEquals(actual, ledger.cost(), 1e-9);
+        assertEquals(baseline, ledger.baselineCost(), 1e-9);
+        assertTrue(ledger.baselineNote() != null && !ledger.baselineNote().isBlank(),
+                "基准是谁必须报出来，否则不知道在跟什么比");
+
+        // 这条是这个项目的关键事实：coder 系列里"旗舰"命名的 coder-next 单价
+        // 反而低于参照模型，按档位名取基准会把结论算反。
+        assertTrue(baseline > actual,
+                "旗舰档单价应当低于参照价；若哪天价格表变了，这条断言会提醒重新核对");
+    }
+
+    @Test
+    @DisplayName("节省比例可被外部复算")
+    void savingIsRecomputable() {
+        meter.record(ModelTier.STANDARD, resp(4000, 2000, "openai"));
+        TokenMeter.Ledger ledger = meter.ledger();
+        LlmProperties.Pricing p = props.getPricing();
+
+        double expectedActual = 4.0 * p.getStandardInput() + 2.0 * p.getStandardOutput();
+        double expectedBaseline = 4.0 * p.getBaselineInput() + 2.0 * p.getBaselineOutput();
         assertEquals(expectedActual, ledger.cost(), 1e-9);
         assertEquals(expectedBaseline, ledger.baselineCost(), 1e-9);
         assertEquals((expectedBaseline - expectedActual) / expectedBaseline * 100.0,
                 ledger.savedPercent(), 1e-9);
-        assertTrue(ledger.savedPercent() > 0, "轻量档应当确实比旗舰便宜");
     }
 
     @Test
@@ -71,8 +85,13 @@ class TokenMeterTest {
         assertEquals(500, light.inputTokens());
         assertEquals("轻量", light.label(), "档位标签直接复用 ModelTier 的，别另立一套");
         assertEquals(3, ledger.calls());
-        assertEquals(props.getPricing().getFlagshipInput(), ledger.pricing().flagshipInput(), 1e-9);
-        assertTrue(ledger.assumption().contains("旗舰"), "必须把假设写出来，不能只丢一个比例给用户");
+
+        LlmProperties.Pricing p = props.getPricing();
+        assertEquals(p.getFlagshipInput(), ledger.pricing().flagshipInput(), 1e-9);
+        assertEquals(p.getBaselineInput(), ledger.pricing().baselineInput(),
+                1e-9, "基准单价也要一起给，否则别人没法重算");
+        assertTrue(ledger.assumption().contains("选型"),
+                "假设里要说清这个数回答的是'选型'而不是'路由'，避免被误引用");
     }
 
     @Test

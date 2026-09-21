@@ -112,6 +112,9 @@ export interface UsagePricing {
   standardOutput: number;
   lightInput: number;
   lightOutput: number;
+  /** 反事实基准单价：它不对应某一档，而是一个显式声明的参照模型 */
+  baselineInput: number;
+  baselineOutput: number;
 }
 
 /** GET /api/usage —— 成本台账 */
@@ -125,6 +128,8 @@ export interface UsageLedger {
   savedPercent: number;
   tiers: TierUsageLine[];
   pricing: UsagePricing;
+  /** 基准是谁（参照模型），跟着数字一起展示 */
+  baselineNote: string;
   /** 数字成立的前提；必须跟比例一起展示 */
   assumption: string;
 }

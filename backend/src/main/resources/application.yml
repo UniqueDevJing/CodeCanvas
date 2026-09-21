@@ -36,22 +36,40 @@ codecanvas:
     # 不让用户在主模型上白等。实测 coder 系列通常 1~3 秒内开始输出。
     first-token-seconds: 45
     # 分级路由的目标模型：同一个请求按任务复杂度落到不同档位。
-    # 旗舰档用 coder-next：平台真实提示词下 3 轮对照，它比 coder-plus 更快（13.3s vs 14.3s）
-    # 且同样时间产出翻倍（13899 vs 6773 字符）。
+    #
+    # ⚠️ 档位名（旗舰/标准/轻量）只是**路由标签**，不代表价格高低 ——
+    # 亲测：这个系列里"旗舰"档的 coder-next 反而最便宜。别按名字猜贵贱。
+    #
+    # 选型依据（平台真实提示词 3 轮对照 + 官方价目表）：
+    #   qwen3-coder-next   13.3s / 13899 字符  |  1 元输入 / 4 元输出（每百万）
+    #   qwen3-coder-plus   14.3s /  6773 字符  |  4 元输入 / 16 元输出
+    #   qwen3-coder-flash  秒级 / 量小          |  1 元输入 / 4 元输出
+    # → coder-plus 被 coder-next **全面压制**（更贵、更慢、产出只有一半），已移出档位映射。
+    #   标准档改由 coder-next 承担；flash 保留在轻量档，为的是小任务的延迟，不是省钱。
     models:
       flagship: ${CODECANVAS_MODEL_FLAGSHIP:qwen3-coder-next}
-      standard: ${CODECANVAS_MODEL_STANDARD:qwen3-coder-plus}
+      standard: ${CODECANVAS_MODEL_STANDARD:qwen3-coder-next}
       light: ${CODECANVAS_MODEL_LIGHT:qwen3-coder-flash}
-    # 单价（元/千 token）。这些是**占位估算值**，成本看板据此计算；
-    # 要对外引用成本数字前，请照搬厂商价目表把它改成真实价格。
-    # 约束：同一个模型出现在多个档位时，各档位单价必须一致，否则同一笔调用会被算出两个成本。
+    # 单价（元/千 token = 元/百万 ÷ 1000）。
+    # 来源：阿里云百炼「模型调用价格」页（docs.bailian.console.aliyun.com/zh/model-studio/model-pricing），
+    # 取 coder 系列 **0<Token≤32K** 档；核对日期 2026-09-21。
+    #
+    # 已知简化：百炼对 coder 系列是**阶梯计价**（按单次请求输入 token 分档，非分段累进），
+    # 本平台只记单一单价。当前请求都在 32K 以内，所以取该档；
+    # 若将来出现超长输入，这里的估算会偏低，需要按档位分段计算。
     pricing:
-      flagship-input: 0.008
-      flagship-output: 0.032
-      standard-input: 0.004
-      standard-output: 0.016
-      light-input: 0.0005
-      light-output: 0.002
+      flagship-input: 0.001
+      flagship-output: 0.004
+      standard-input: 0.001
+      standard-output: 0.004
+      light-input: 0.001
+      light-output: 0.004
+      # 反事实基准单价（元/千 token）：回答"不做选型、按名字直觉挑一个会多花多少"。
+      # 取改造前挂在标准档的 qwen3-coder-plus（4 / 16 元每百万）——那正是"没修正之前"的实际路径。
+      # 它不是任何一档的实际价格，而是一个**显式声明的参照**，基准是谁会跟着台账一起返回。
+      baseline-input: 0.004
+      baseline-output: 0.016
+      baseline-note: qwen3-coder-plus（改造前挂在标准档的模型）
 
 logging:
   charset:

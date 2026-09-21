@@ -97,14 +97,52 @@ public class LlmProperties {
         }
     }
 
-    /** 单价（元 / 千 token），仅用于成本看板估算，按实际厂商价格调整。 */
+    /**
+     * 单价（元 / 千 token），仅用于成本看板估算，按实际厂商价格调整。
+     *
+     * <p>{@code baseline*} 是**反事实基准**的单价：回答"如果不做模型选型、按名字直觉挑一个会花多少"。
+     * 它不是某一档的实际价格，而是一个显式声明的参照价 —— 写清楚参照是什么，
+     * 比偷偷挑一个能让比例好看的基准要诚实。
+     */
     public static class Pricing {
-        private double flagshipInput = 0.004;
-        private double flagshipOutput = 0.016;
+        // 默认值 = 阿里云百炼 coder 系列 0<Token≤32K 档（元/百万 ÷ 1000），核对日期 2026-09-21
+        private double flagshipInput = 0.001;
+        private double flagshipOutput = 0.004;
         private double standardInput = 0.001;
-        private double standardOutput = 0.002;
-        private double lightInput = 0.0005;
-        private double lightOutput = 0.001;
+        private double standardOutput = 0.004;
+        private double lightInput = 0.001;
+        private double lightOutput = 0.004;
+
+        /** 反事实基准单价：改造前标准档用的 qwen3-coder-plus（4 / 16 元每百万）。 */
+        private double baselineInput = 0.004;
+        private double baselineOutput = 0.016;
+
+        /** 基准是谁，跟着数字一起展示，让人知道在跟什么比。 */
+        private String baselineNote = "qwen3-coder-plus（改造前挂在标准档的模型）";
+
+        public double getBaselineInput() {
+            return baselineInput;
+        }
+
+        public void setBaselineInput(double v) {
+            this.baselineInput = v;
+        }
+
+        public double getBaselineOutput() {
+            return baselineOutput;
+        }
+
+        public void setBaselineOutput(double v) {
+            this.baselineOutput = v;
+        }
+
+        public String getBaselineNote() {
+            return baselineNote;
+        }
+
+        public void setBaselineNote(String v) {
+            this.baselineNote = v;
+        }
 
         public double getFlagshipInput() {
             return flagshipInput;

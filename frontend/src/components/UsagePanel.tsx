@@ -61,7 +61,7 @@ export function UsagePanel({ tokens }: UsagePanelProps) {
     return (
       <div className="usage-scroll">
         <div className="usage-hint">
-          还没有调用记录。生成一次应用后，这里会显示实际花费与"全走旗舰档"的对照。
+          还没有调用记录。生成一次应用后，这里会显示实际花费与基准参照的对照。
         </div>
       </div>
     );
@@ -78,13 +78,11 @@ export function UsagePanel({ tokens }: UsagePanelProps) {
         </div>
         <div className="usage-hero-col">
           <span className="usage-hero-value is-baseline">{money(ledger.baselineCost)}</span>
-          <span className="usage-hero-label">若全走旗舰档</span>
+          <span className="usage-hero-label">基准：{ledger.baselineNote}</span>
         </div>
         <div className="usage-hero-col">
           <span className="usage-hero-value is-save">{ledger.savedPercent.toFixed(1)}%</span>
-          <span className="usage-hero-label">
-            省下 {money(ledger.savedCost)}
-          </span>
+          <span className="usage-hero-label">选型收益 {money(ledger.savedCost)}</span>
         </div>
       </div>
 
@@ -135,6 +133,12 @@ export function UsagePanel({ tokens }: UsagePanelProps) {
               {ledger.pricing.lightInput} / {ledger.pricing.lightOutput}
             </span>
           </li>
+          <li className="usage-row is-price">
+            <span className="usage-tier usage-dim">基准（{ledger.baselineNote}）</span>
+            <span className="usage-num usage-dim">
+              {ledger.pricing.baselineInput} / {ledger.pricing.baselineOutput}
+            </span>
+          </li>
         </ul>
       </section>
 
@@ -151,8 +155,7 @@ export function UsagePanel({ tokens }: UsagePanelProps) {
                 {tokens.promptTokens + tokens.completionTokens} token
                 {tokens.totalCost > 0 ? ` · 累计 ${money(tokens.totalCost)}` : ''}
               </span>
-              <span className="usage-num usage-save">省 {tokens.savedPercent.toFixed(1)}%</span>
-            </li>
+              <span className="usage-num usage-save">省 {tokens.savedPercent.toFixed(1)}%</span>            </li>
           </ul>
         </section>
       )}
