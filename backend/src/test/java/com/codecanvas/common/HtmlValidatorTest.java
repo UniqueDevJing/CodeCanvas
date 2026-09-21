@@ -100,6 +100,50 @@ class HtmlValidatorTest {
     }
 
     @Test
+    @DisplayName("模板字符串里嵌套模板字符串不应造成误报")
+    void ignoresNestedTemplateLiterals() {
+        // 第二个实测误报：渲染函数里外层模板串的 ${} 内又套了一个模板串。
+        // 按"找到下一个反引号就收工"的写法会停在内层模板的开引号上，
+        // 后面的 </div> 被当成正则开始，计数错位 → 报"括号不配平"，
+        // 连续 3 轮修复都没通过。而这段代码是合法 JS（node --check 通过）。
+        String render = "    function row(t) {\n"
+                + "      return `<div class=\"item ${t.type}\">\n"
+                + "        ${t.note ? `<span class=\"note\">${t.note}</span>` : ''}\n"
+                + "      </div>`;\n"
+                + "    }\n";
+        String page = VALID.replace("var a = { x: [1, 2] };", render);
+        assertTrue(HtmlValidator.validate(page).isEmpty(),
+                () -> "嵌套模板串不应导致误报，实际：" + HtmlValidator.describe(HtmlValidator.validate(page)));
+    }
+
+    @Test
+    @DisplayName("多行模板字符串不应造成误报")
+    void ignoresMultiLineTemplateLiterals() {
+        String render = "    var html = `\n"
+                + "      <ul>\n"
+                + "        ${list.map(i => `<li>${i}</li>`).join('')}\n"
+                + "      </ul>`;\n";
+        String page = VALID.replace("var a = { x: [1, 2] };", render);
+        assertTrue(HtmlValidator.validate(page).isEmpty(),
+                () -> "多行模板串不应导致误报，实际：" + HtmlValidator.describe(HtmlValidator.validate(page)));
+    }
+
+    @Test
+    @DisplayName("插值里的花括号配对要算准")
+    void countsBracesInsideInterpolation() {
+        // 插值内部是对象字面量时，花括号必须成对计入
+        String ok = VALID.replace("var a = { x: [1, 2] };",
+                "    var s = `${ { a: 1, b: 2 }.a }`;\n    var t = `${ fn({ k: [1] }) }`;");
+        assertTrue(HtmlValidator.validate(ok).isEmpty(),
+                () -> "插值内的对象字面量不应导致误报，实际：" + HtmlValidator.describe(HtmlValidator.validate(ok)));
+
+        String broken = VALID.replace("var a = { x: [1, 2] };",
+                "    var s = `${ { a: 1 }.a }`;\n    function h() { return 'y';");
+        assertTrue(HtmlValidator.validate(broken).stream().anyMatch(i -> "SCRIPT".equals(i.type())),
+                "模板串之后的真实括号错误仍应被检出");
+    }
+
+    @Test
     @DisplayName("空内容应被检出")
     void detectsEmpty() {
         assertFalse(HtmlValidator.validate("").isEmpty());

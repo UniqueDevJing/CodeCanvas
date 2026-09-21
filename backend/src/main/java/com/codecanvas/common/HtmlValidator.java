@@ -18,12 +18,14 @@ import java.util.regex.Pattern;
  * <ol>
  *   <li>输出是否为空、是否残留 Markdown 围栏或占位说明</li>
  *   <li>HTML 骨架是否存在，标签是否闭合（跳过 script / style / 注释内容）</li>
- *   <li>script 里的括号是否配平（跳过字符串、注释与正则字面量）</li>
+ *   <li>script 里的括号是否配平（跳过字符串、模板字符串、注释与正则字面量）</li>
  * </ol>
  *
  * <p><b>误报比漏报更贵</b>：漏报只是少拦一次，误报却会让自检闭环去做无意义的重试——
  * 花掉真实的模型费用，用户还要多等。所以宁可规则保守，也不能乱报。
- * 正则字面量识别（{@link #regexCanStart}）就是为此加的。
+ * 这里有两处专门为"别误报"加的识别逻辑：正则字面量（{@link #regexCanStart}）与
+ * 模板字符串插值（{@link #skipTemplateLiteral}）——两者都是实测踩出来的，
+ * 前者让一个正常页面白等 193 秒，后者让另一个页面连做 3 轮无效修复后仍判不通过。
  */
 public final class HtmlValidator {
 
@@ -229,21 +231,10 @@ public final class HtmlValidator {
                     i++;
                 }
                 i = Math.min(code.length(), i + 2);
-            } else if (c == '\'' || c == '"' || c == '`') {
-                char quote = c;
-                i++;
-                while (i < code.length()) {
-                    char inner = code.charAt(i);
-                    if (inner == '\\') {
-                        i += 2;
-                        continue;
-                    }
-                    if (inner == quote) {
-                        i++;
-                        break;
-                    }
-                    i++;
-                }
+            } else if (c == '`') {
+                i = skipTemplateLiteral(code, i);
+            } else if (c == '\'' || c == '"') {
+                i = skipSimpleString(code, i);
             } else if (c == '/' && regexCanStart(code, i)) {
                 i = skipRegexLiteral(code, i);
             } else {
@@ -252,6 +243,95 @@ public final class HtmlValidator {
             }
         }
         return out.toString();
+    }
+
+    /** 跳过一段普通字符串字面量，返回新位置。 */
+    private static int skipSimpleString(String code, int quoteIndex) {
+        char quote = code.charAt(quoteIndex);
+        int i = quoteIndex + 1;
+        while (i < code.length()) {
+            char c = code.charAt(i);
+            if (c == '\\') {
+                i += 2;
+                continue;
+            }
+            if (c == quote) {
+                return i + 1;
+            }
+            i++;
+        }
+        return i;
+    }
+
+    /**
+     * 跳过一段模板字符串，返回新位置。
+     *
+     * <p><b>为什么不能按普通字符串处理</b>：模板串里可以有 {@code ${...}} 插值，
+     * 而插值内部**又能再嵌模板串**。按普通字符串"找到下一个反引号就收工"的写法，
+     * 会停在内层模板的开引号上，后面的代码全被当成普通代码——
+     * 于是 {@code </div>} 里的斜杠被当成正则开始，计数彻底错位。
+     *
+     * <p>实测案例（记账本页面的渲染函数）：
+     * <pre>
+     * `&lt;div class="item ${t.type}"&gt;
+     *    ${t.note ? `&lt;span&gt;${t.note}&lt;/span&gt;` : ''}
+     *  &lt;/div&gt;`
+     * </pre>
+     * 这段代码完全合法（{@code node --check} 通过），却让校验器报了三次"括号不配平"。
+     *
+     * <p>所以这里用深度计数：只有配对的花括号才结束插值，插值内部遇到反引号、
+     * 引号、注释、正则都递归跳过。
+     */
+    private static int skipTemplateLiteral(String code, int backtickIndex) {
+        int i = backtickIndex + 1;
+        int depth = 0;
+        while (i < code.length()) {
+            char c = code.charAt(i);
+            if (c == '\\') {
+                i += 2;
+                continue;
+            }
+            if (depth == 0) {
+                if (c == '`') {
+                    return i + 1;
+                }
+                if (c == '$' && i + 1 < code.length() && code.charAt(i + 1) == '{') {
+                    depth = 1;
+                    i += 2;
+                    continue;
+                }
+                i++;
+                continue;
+            }
+            // 以下处于 ${ } 内部
+            char next = i + 1 < code.length() ? code.charAt(i + 1) : '\0';
+            if (c == '{') {
+                depth++;
+                i++;
+            } else if (c == '}') {
+                depth--;
+                i++;
+            } else if (c == '`') {
+                i = skipTemplateLiteral(code, i);
+            } else if (c == '\'' || c == '"') {
+                i = skipSimpleString(code, i);
+            } else if (c == '/' && next == '/') {
+                while (i < code.length() && code.charAt(i) != '\n') {
+                    i++;
+                }
+            } else if (c == '/' && next == '*') {
+                i += 2;
+                while (i + 1 < code.length() && !(code.charAt(i) == '*' && code.charAt(i + 1) == '/')) {
+                    i++;
+                }
+                i = Math.min(code.length(), i + 2);
+            } else if (c == '/' && regexCanStart(code, i)) {
+                i = skipRegexLiteral(code, i);
+            } else {
+                i++;
+            }
+        }
+        return i;
     }
 
     /**
