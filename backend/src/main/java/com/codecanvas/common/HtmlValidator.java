@@ -18,8 +18,12 @@ import java.util.regex.Pattern;
  * <ol>
  *   <li>输出是否为空、是否残留 Markdown 围栏或占位说明</li>
  *   <li>HTML 骨架是否存在，标签是否闭合（跳过 script / style / 注释内容）</li>
- *   <li>script 里的括号是否配平（跳过字符串与注释）</li>
+ *   <li>script 里的括号是否配平（跳过字符串、注释与正则字面量）</li>
  * </ol>
+ *
+ * <p><b>误报比漏报更贵</b>：漏报只是少拦一次，误报却会让自检闭环去做无意义的重试——
+ * 花掉真实的模型费用，用户还要多等。所以宁可规则保守，也不能乱报。
+ * 正则字面量识别（{@link #regexCanStart}）就是为此加的。
  */
 public final class HtmlValidator {
 
@@ -38,6 +42,15 @@ public final class HtmlValidator {
     private static final Pattern TAG = Pattern.compile("<(/?)([a-zA-Z][a-zA-Z0-9-]*)");
 
     private static final List<String> PLACEHOLDERS = List.of("此处省略", "其他功能类似", "省略部分", "TODO:", "TODO：");
+
+    /**
+     * 这些关键字后面跟的 {@code /} 是正则字面量，不是除号。
+     *
+     * <p>不做这个判断的话，{@code return /a/} 会被当成除法，正则里的括号就会被计入计数。
+     */
+    private static final Set<String> REGEX_PRECEDING_KEYWORDS = Set.of(
+            "return", "typeof", "instanceof", "in", "of", "new", "delete", "void",
+            "case", "do", "else", "yield", "await", "throw");
 
     public record Issue(String type, String message) {
     }
@@ -199,7 +212,7 @@ public final class HtmlValidator {
         return issues;
     }
 
-    /** 去掉字符串字面量与注释，避免其中的括号干扰计数。 */
+    /** 去掉字符串字面量、注释与正则字面量，避免其中的括号干扰计数。 */
     private static String stripStringsAndComments(String code) {
         StringBuilder out = new StringBuilder(code.length());
         int i = 0;
@@ -231,12 +244,82 @@ public final class HtmlValidator {
                     }
                     i++;
                 }
+            } else if (c == '/' && regexCanStart(code, i)) {
+                i = skipRegexLiteral(code, i);
             } else {
                 out.append(c);
                 i++;
             }
         }
         return out.toString();
+    }
+
+    /**
+     * 这个 {@code /} 是正则字面量的开始，还是除号？
+     *
+     * <p>为什么必须区分：正则里允许出现引号（CSV 处理里的 {@code /^"|"$/g} 就是典型），
+     * 若把它当普通代码，里面的引号会被当成字符串开始，**后面的代码会被整段吞掉**，
+     * 括号计数随之错位。实测就踩过：一个记账本页面的脚本被判成"括号不配平"，
+     * 连续 3 次修复都没通过，白等 193 秒——而代码其实完全正常。
+     *
+     * <p>判据用业界通行的启发式：往前找最近的**有效字符**，
+     * 只有当它是"操作数结尾"（标识符、数字、{@code ) ] }}）时才是除号；
+     * 但 {@code return /re/} 这类关键字后面跟的是正则，单独放行。
+     */
+    private static boolean regexCanStart(String code, int slashIndex) {
+        int i = slashIndex - 1;
+        while (i >= 0 && Character.isWhitespace(code.charAt(i))) {
+            i--;
+        }
+        if (i < 0) {
+            return true;
+        }
+        char prev = code.charAt(i);
+        boolean operandLike = Character.isLetterOrDigit(prev) || prev == '_' || prev == '$'
+                || prev == ')' || prev == ']' || prev == '}'
+                || prev == '\'' || prev == '"' || prev == '`';
+        if (!operandLike) {
+            return true;
+        }
+        if (Character.isLetterOrDigit(prev)) {
+            int end = i + 1;
+            int start = end;
+            while (start > 0 && (Character.isLetterOrDigit(code.charAt(start - 1))
+                    || code.charAt(start - 1) == '_' || code.charAt(start - 1) == '$')) {
+                start--;
+            }
+            return REGEX_PRECEDING_KEYWORDS.contains(code.substring(start, end));
+        }
+        return false;
+    }
+
+    /** 跳过一段正则字面量（含末尾的 g / i / m 等修饰符），返回新位置。 */
+    private static int skipRegexLiteral(String code, int slashIndex) {
+        int i = slashIndex + 1;
+        boolean inClass = false;
+        while (i < code.length()) {
+            char c = code.charAt(i);
+            if (c == '\\') {
+                i += 2;
+                continue;
+            }
+            if (c == '\n') {
+                break;              // 正则不能跨行，说明前面的判断是误判，就地收手
+            }
+            if (c == '[') {
+                inClass = true;
+            } else if (c == ']') {
+                inClass = false;
+            } else if (c == '/' && !inClass) {
+                i++;
+                break;
+            }
+            i++;
+        }
+        while (i < code.length() && Character.isLetter(code.charAt(i))) {
+            i++;                    // 修饰符
+        }
+        return i;
     }
 
     /** 把问题清单转成给模型看的错误文本。 */
