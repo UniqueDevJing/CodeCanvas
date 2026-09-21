@@ -78,13 +78,15 @@ export function UsagePanel({ tokens }: UsagePanelProps) {
         </div>
         <div className="usage-hero-col">
           <span className="usage-hero-value is-baseline">{money(ledger.baselineCost)}</span>
-          <span className="usage-hero-label">基准：{ledger.baselineNote}</span>
+          <span className="usage-hero-label">基准成本</span>
         </div>
         <div className="usage-hero-col">
           <span className="usage-hero-value is-save">{ledger.savedPercent.toFixed(1)}%</span>
           <span className="usage-hero-label">选型收益 {money(ledger.savedCost)}</span>
         </div>
       </div>
+
+      <p className="usage-baseline-note">基准：{ledger.baselineNote}</p>
 
       <p className="usage-assumption">{ledger.assumption}</p>
 

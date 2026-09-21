@@ -61,6 +61,14 @@
   color: var(--muted);
 }
 
+/* 基准是谁单独占一行：塞进英雄区的标签里会挤成两行，反而看不清 */
+.usage-baseline-note {
+  margin: -6px 0 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-3);
+}
+
 /* ------------------------------ 前提说明 ------------------------------ */
 
 .usage-assumption {
