@@ -25,3 +25,6 @@ deploy/.deploy-credentials
 
 # 损坏文件的取证备份（2026-09-18 App.tsx 全零事故）
 *.corrupt-*
+
+# 调试产物：导出生成内容做校验器复跑，不入库
+backend/tmp-gen/
