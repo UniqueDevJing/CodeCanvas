@@ -306,6 +306,10 @@ function mergeVersion(versions: VersionInfo[], result: ResultEvent): VersionInfo
     createdAt: new Date().toISOString(),
     summary: result.summary,
     active: true,
+    healAttempts: result.selfHeal?.attempts ?? 0,
+    cost: result.tokens?.cost,
+    model: result.model,
+    tierLabel: result.tierLabel,
   };
   const rest = versions.filter((v) => v.id !== result.versionId).map((v) => ({ ...v, active: false }));
   return [entry, ...rest];

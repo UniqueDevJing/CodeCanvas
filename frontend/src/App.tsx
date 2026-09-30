@@ -125,9 +125,27 @@ export default function App() {
       case 'heal':
         dispatch({ type: 'stream/heal', heal: event.data });
         break;
-      case 'result':
-        dispatch({ type: 'stream/result', result: event.data });
+      case 'result': {
+        // 后端 AgentResult 是平铺字段（healAttempts/recovered/usage），前端类型是嵌套
+        // selfHeal/tokens。此前没做映射，"自动修复 N 次"恒为 0 —— 在入口归一化一次。
+        const raw = event.data as unknown as Record<string, unknown> & {
+          selfHeal?: { attempts: number; recovered: boolean };
+          tokens?: unknown;
+          usage?: unknown;
+        };
+        const normalized = {
+          ...raw,
+          selfHeal:
+            raw.selfHeal ??
+            {
+              attempts: Number(raw.healAttempts ?? 0),
+              recovered: raw.recovered === undefined ? true : Boolean(raw.recovered),
+            },
+          tokens: raw.tokens ?? raw.usage,
+        };
+        dispatch({ type: 'stream/result', result: normalized as never });
         break;
+      }
       case 'error':
         dispatch({ type: 'stream/error', message: event.data.message });
         break;

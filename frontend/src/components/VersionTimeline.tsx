@@ -33,6 +33,20 @@ export function VersionTimeline({ versions, rollingBack, onRollback }: VersionTi
               </span>
             </div>
             <p className="version-summary">{version.summary || '暂无变更说明'}</p>
+            {(version.healAttempts ?? 0) > 0 && (
+              <div className="version-meta">
+                <span
+                  className="tag"
+                  title="静态校验未通过时自动回注修复的轮数（上限 3 轮）"
+                >
+                  自检修复 {version.healAttempts} 次
+                </span>
+                {typeof version.cost === 'number' && version.cost > 0 && (
+                  <span className="tag">${version.cost.toFixed(4)}</span>
+                )}
+                {version.tierLabel && <span className="tag">{version.tierLabel}</span>}
+              </div>
+            )}
             {!version.active && (
               <button
                 type="button"

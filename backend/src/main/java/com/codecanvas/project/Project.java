@@ -1,5 +1,7 @@
 package com.codecanvas.project;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -9,10 +11,14 @@ import java.util.List;
  *
  * <p>用 record + with 方法而非可变对象：每次迭代产出新实例，避免并发下共享状态被改坏。
  *
+ * <p>ignoreUnknown：落盘的是整个 record 的 JSON，应用升级后新增字段写的文件要能被旧版本读，
+ * 旧字段写的文件也要能被新版本读——否则一次升级就会让启动时的 loadAll 静默丢掉全部历史项目。
+ *
  * @param prompt           用户第一句话说的需求
  * @param prd              结构化需求文档，多轮迭代时的稳定上下文
  * @param currentVersionId 当前生效的版本
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public record Project(
         String id,
         String name,
@@ -90,6 +96,7 @@ public record Project(
                 ? "" : files.get(0).content();
     }
 
+    @JsonIgnore   // 否则 Jackson 按 isX() 约定把 "empty" 写进项目 JSON（实测已发生）
     public boolean isEmpty() {
         return files == null || files.isEmpty();
     }

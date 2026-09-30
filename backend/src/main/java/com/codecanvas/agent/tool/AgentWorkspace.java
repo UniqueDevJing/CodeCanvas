@@ -26,7 +26,39 @@ public class AgentWorkspace {
         }
     }
 
+    /**
+     * 写入前校验路径。工作区是内存 Map，写入的 path 原样进项目 JSON，
+     * 这里是路径的唯一守门人：拒绝空路径、绝对路径、目录穿越与反斜杠，
+     * 避免把 "../../etc/passwd" 这类脏键永久固化进项目数据。
+     *
+     * @return 错误说明；null 表示合法
+     */
+    public static String checkPath(String path) {
+        if (path == null || path.isBlank()) {
+            return "路径为空";
+        }
+        if (path.length() > 200) {
+            return "路径过长（>200 字符）";
+        }
+        if (path.indexOf('\\') >= 0) {
+            return "路径不允许包含反斜杠（统一用 /）";
+        }
+        if (path.startsWith("/") || path.matches("^[A-Za-z]:.*")) {
+            return "不允许绝对路径";
+        }
+        for (String seg : path.split("/")) {
+            if (seg.isEmpty() || seg.equals(".") || seg.equals("..")) {
+                return "路径段非法：" + seg;
+            }
+        }
+        return null;
+    }
+
     public void write(String path, String content) {
+        String invalid = checkPath(path);
+        if (invalid != null) {
+            throw new IllegalArgumentException("非法文件路径（" + invalid + "）: " + path);
+        }
         files.put(path, content);
         if (!changed.contains(path)) {
             changed.add(path);

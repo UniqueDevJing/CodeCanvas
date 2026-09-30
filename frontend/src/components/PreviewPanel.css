@@ -500,6 +500,13 @@
   color: var(--accent-text);
 }
 
+.version-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
 .version-rollback {
   margin-top: 8px;
 }

@@ -35,9 +35,17 @@ public class ToolRegistry {
         if (tool == null) {
             throw new IllegalArgumentException("未注册的工具: " + name);
         }
-        String result = tool.execute(args);
+        // 参数可能来自模型输出, 缺失/为 null 都属正常输入而非编程错误, 统一在这里兜底,
+        // 避免 String.valueOf(null) 产生 "null" 字符串混进 path/content
+        String result = tool.execute(args == null ? Map.of() : args);
         trace.add(name + "(" + summarize(args) + ") -> " + brief(result));
         return result;
+    }
+
+    /** 取字符串参数：显式 null 视为缺失并回落默认值（区别于 String.valueOf 的 "null" 陷阱）。 */
+    static String stringArg(Map<String, Object> args, String key, String defaultValue) {
+        Object v = args.get(key);
+        return v == null ? defaultValue : String.valueOf(v);
     }
 
     public List<String> trace() {
@@ -119,7 +127,7 @@ public class ToolRegistry {
 
         @Override
         public String execute(Map<String, Object> args) {
-            String path = String.valueOf(args.getOrDefault("path", workspace.mainPath()));
+            String path = stringArg(args, "path", workspace.mainPath());
             String content = workspace.read(path);
             if (content == null) {
                 return "文件不存在: " + path;
@@ -130,6 +138,9 @@ public class ToolRegistry {
 
     /** 写入文件。 */
     public static class WriteFileTool implements Tool {
+
+        /** 单文件内容上限： runaway 生成会把项目 JSON 撑到几十 MB, 也说明生成已失控。 */
+        static final int MAX_CONTENT_CHARS = 400_000;
 
         private final AgentWorkspace workspace;
 
@@ -149,10 +160,20 @@ public class ToolRegistry {
 
         @Override
         public String execute(Map<String, Object> args) {
-            String path = String.valueOf(args.getOrDefault("path", workspace.mainPath()));
-            String content = String.valueOf(args.getOrDefault("content", ""));
+            String path = stringArg(args, "path", workspace.mainPath());
+            String content = stringArg(args, "content", "");
             if (content.isBlank()) {
                 return "写入被拒绝：内容为空";
+            }
+            // 路径校验：workspace 是内存工作区，path 会被原样固化进项目 JSON，
+            // 必须在入口拦住目录穿越/绝对路径这类脏键
+            String invalid = AgentWorkspace.checkPath(path);
+            if (invalid != null) {
+                return "写入被拒绝：" + invalid + "（" + path + "）";
+            }
+            if (content.length() > MAX_CONTENT_CHARS) {
+                return "写入被拒绝：内容 " + content.length() + " 字符，超过单文件上限 "
+                        + MAX_CONTENT_CHARS + "（疑似生成失控，请缩小改动范围）";
             }
             workspace.write(path, content);
             return "已写入 " + path + "（" + content.length() + " 字符）";
@@ -180,7 +201,7 @@ public class ToolRegistry {
 
         @Override
         public String execute(Map<String, Object> args) {
-            String path = String.valueOf(args.getOrDefault("path", workspace.mainPath()));
+            String path = stringArg(args, "path", workspace.mainPath());
             String content = workspace.read(path);
             if (content == null) {
                 return "校验失败：文件不存在 " + path;

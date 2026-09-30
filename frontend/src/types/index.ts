@@ -161,6 +161,8 @@ export interface ResultEvent {
   files: ProjectFile[];
   previewHtml: string;
   selfHeal: { attempts: number; recovered: boolean };
+  model?: string;
+  tierLabel?: string;
   quality?: QualityCheck[];
   tokens: TokensInfo;
 }
@@ -205,6 +207,12 @@ export interface VersionInfo {
   createdAt: string;
   summary: string;
   active: boolean;
+  /** 本版自检修复轮数（后端 VersionItem.healAttempts，此前前端未接） */
+  healAttempts?: number;
+  /** 本版累计花费（美元） */
+  cost?: number;
+  model?: string;
+  tierLabel?: string;
 }
 
 export interface ProjectSummary {
