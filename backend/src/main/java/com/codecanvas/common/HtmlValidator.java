@@ -46,6 +46,83 @@ public final class HtmlValidator {
     private static final List<String> PLACEHOLDERS = List.of("此处省略", "其他功能类似", "省略部分", "TODO:", "TODO：");
 
     /**
+     * 剥离注释后再做占位符检测。
+     *
+     * <p>原先对整份 HTML 做 {@code contains} 纯文本匹配，会把**注释里的 TODO**
+     * 当成未实现的占位内容：
+     * <pre>
+     *   &lt;script&gt;// TODO: 后续接入支付&lt;/script&gt;
+     *   &lt;!-- TODO: 补充响应式断点 --&gt;
+     * </pre>
+     * 这两种都是开发者留下的正常注释，不是「模型偷懒没写完」。
+     *
+     * <p>误报的后果比漏报更糟：校验器判 PLACEHOLDER 失败 → 进入自检修复闭环
+     * → 模型被要求「补全占位内容」→ 为消除告警而编造并不需要的功能代码。
+     * 这与「首轮通过率」的目标直接冲突。
+     *
+     * <p><b>HTML 标签外不做 {@code //} 剥离</b>：{@code https://cdn...} 这类 URL
+     * 含有 {@code //}，若一并当行注释处理会吃掉 URL 之后的内容，
+     * 破坏后续的标签闭合检查。JS/CSS 的 {@code //} 注释只在 script/style 块内处理。
+     */
+    private static String stripComments(String html) {
+        StringBuilder out = new StringBuilder(html.length());
+        Matcher mComment = COMMENT.matcher(html);
+        int last = 0;
+        while (mComment.find()) {
+            out.append(html, last, mComment.start()).append(' ');
+            last = mComment.end();
+        }
+        out.append(html.substring(last));
+
+        // script / style 块内再剥离 JS 行注释与块注释
+        String skeleton = out.toString();
+        Matcher mScript = SCRIPT_BLOCK.matcher(skeleton);
+        StringBuilder rebuilt = new StringBuilder();
+        last = 0;
+        while (mScript.find()) {
+            rebuilt.append(skeleton, last, mScript.start());
+            rebuilt.append("<script>").append(stripJsComments(mScript.group())).append("</script>");
+            last = mScript.end();
+        }
+        rebuilt.append(skeleton.substring(last));
+
+        skeleton = rebuilt.toString();
+        Matcher mStyle = STYLE_BLOCK.matcher(skeleton);
+        rebuilt = new StringBuilder();
+        last = 0;
+        while (mStyle.find()) {
+            rebuilt.append(skeleton, last, mStyle.start());
+            rebuilt.append("<style>").append(stripJsComments(mStyle.group())).append("</style>");
+            last = mStyle.end();
+        }
+        rebuilt.append(skeleton.substring(last));
+        return rebuilt.toString();
+    }
+
+    /** 剥离一段 JS/CSS 内部的 {@code //} 行注释与 {@code /* *}{@code /} 块注释 */
+    private static String stripJsComments(String block) {
+        StringBuilder out = new StringBuilder(block.length());
+        int i = 0;
+        while (i < block.length()) {
+            if (block.startsWith("//", i)) {
+                int end = block.indexOf('\n', i);
+                i = end < 0 ? block.length() : end;
+                out.append(' ');
+                continue;
+            }
+            if (block.startsWith("/*", i)) {
+                int end = block.indexOf("*/", i + 2);
+                i = end < 0 ? block.length() : end + 2;
+                out.append(' ');
+                continue;
+            }
+            out.append(block.charAt(i));
+            i++;
+        }
+        return out.toString();
+    }
+
+    /**
      * 这些关键字后面跟的 {@code /} 是正则字面量，不是除号。
      *
      * <p>不做这个判断的话，{@code return /a/} 会被当成除法，正则里的括号就会被计入计数。
@@ -106,8 +183,10 @@ public final class HtmlValidator {
         if (trimmed.contains("```")) {
             issues.add(new Issue("FENCE", "结果里残留了 Markdown 代码围栏（```），应该只输出纯 HTML"));
         }
+        // 剥离注释后再检测占位：注释里的 TODO 是正常开发者注释，不是未实现的占位
+        String withoutComments = stripComments(trimmed);
         for (String placeholder : PLACEHOLDERS) {
-            if (trimmed.contains(placeholder)) {
+            if (withoutComments.contains(placeholder)) {
                 issues.add(new Issue("PLACEHOLDER", "结果里存在占位内容「" + placeholder + "」，代码必须完整"));
                 break;
             }
