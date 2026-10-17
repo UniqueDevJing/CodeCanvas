@@ -61,8 +61,12 @@ class HtmlValidatorTest {
     @DisplayName("残留代码围栏与占位内容应被检出")
     void detectsFenceAndPlaceholder() {
         assertFalse(HtmlValidator.validate("```html\n" + VALID + "\n```").isEmpty(), "围栏应被检出");
-        assertFalse(HtmlValidator.validate(VALID.replace("<h1>标题</h1>", "<h1>标题</h1><!-- 此处省略 -->"))
-                .isEmpty(), "占位内容应被检出");
+        // 占位词必须写在**正文**里才算未实现；写在注释里是正常开发者注释，
+        // 不应触发（详见 HtmlValidatorPlaceholderCommentTest）。
+        // 此处原先用 <!-- 此处省略 --> 作为样例，等于要求"注释里的占位也算未实现"，
+        // 与修复目标相反。
+        assertFalse(HtmlValidator.validate(VALID.replace("<h1>标题</h1>", "<h1>此处省略</h1>"))
+                .isEmpty(), "正文里的占位内容应被检出");
     }
 
     @Test
