@@ -31,6 +31,12 @@ public class AgentWorkspace {
      * 这里是路径的唯一守门人：拒绝空路径、绝对路径、目录穿越与反斜杠，
      * 避免把 "../../etc/passwd" 这类脏键永久固化进项目数据。
      *
+     * <p>控制字符（含 NUL）一并拒绝：path 会被写进项目 JSON 并原样回显到前端，
+     * 而 NUL 在 Java 的 {@code Paths.get(String)} 里会<b>截断</b>字符串，
+     * 于是「校验通过的那个 key」与「真正落盘时用的那个 key」不是同一个。
+     * 即使当前工作区是纯内存、无文件系统 IO，这个键也会随项目 JSON 一路带到
+     * 导出/导入与前端渲染，是个很难排查的隐性脏数据来源。
+     *
      * @return 错误说明；null 表示合法
      */
     public static String checkPath(String path) {
@@ -39,6 +45,12 @@ public class AgentWorkspace {
         }
         if (path.length() > 200) {
             return "路径过长（>200 字符）";
+        }
+        for (int i = 0; i < path.length(); i++) {
+            char c = path.charAt(i);
+            if (c < 0x20 || c == 0x7F) {
+                return "路径不允许包含控制字符（位置 " + i + "）";
+            }
         }
         if (path.indexOf('\\') >= 0) {
             return "路径不允许包含反斜杠（统一用 /）";
