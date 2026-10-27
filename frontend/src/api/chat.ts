@@ -3,6 +3,9 @@ import type { ChatStreamRequest, ParsedStreamEvent } from '../types';
 
 export const CHAT_STREAM_PATH = `${API_BASE}/chat/stream`;
 
+/** 构建期注入的访问口令 (与后端 CODECANVAS_API_KEY 一致)。浏览器可见，属访问口令而非机密。 */
+const API_KEY = (import.meta.env.VITE_API_KEY as string | undefined) ?? '';
+
 export interface StreamChatHandlers {
   onEvent: (event: ParsedStreamEvent) => void;
   signal?: AbortSignal;
@@ -21,6 +24,7 @@ export async function streamChat(
     headers: {
       'Content-Type': 'application/json',
       Accept: 'text/event-stream',
+      ...(API_KEY ? { 'X-API-Key': API_KEY } : {}),
     },
     body: JSON.stringify(request),
     signal: handlers.signal,

@@ -18,8 +18,15 @@ export class ApiError extends Error {
 
 export const API_BASE = `${import.meta.env.BASE_URL}api`;
 
+/** 构建期注入的访问口令 (与后端 CODECANVAS_API_KEY 一致)。浏览器可见，属访问口令而非机密。 */
+const API_KEY = (import.meta.env.VITE_API_KEY as string | undefined) ?? '';
+
 function mergeHeaders(init?: HeadersInit): HeadersInit {
-  return { Accept: 'application/json', ...(init as Record<string, string> | undefined) };
+  return {
+    Accept: 'application/json',
+    ...(API_KEY ? { 'X-API-Key': API_KEY } : {}),
+    ...(init as Record<string, string> | undefined),
+  };
 }
 
 export async function apiGet<T>(path: string, init?: RequestInit): Promise<T> {
@@ -34,10 +41,11 @@ export async function apiGet<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
-export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
+export async function apiPost<T>(path: string, body?: unknown, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
+    ...init,
     method: 'POST',
-    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+    headers: mergeHeaders({ 'Content-Type': 'application/json', ...(init?.headers as Record<string, string> | undefined) }),
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   if (!response.ok) {

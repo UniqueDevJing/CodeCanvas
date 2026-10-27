@@ -11,6 +11,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
+import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 /** 应用装配。 */
@@ -86,7 +87,7 @@ public class CodeCanvasConfig {
 
     /** 前端开发服务器直连时允许跨域（生产由网关处理）。 */
     @Bean
-    public WebMvcConfigurer corsConfigurer() {
+    public WebMvcConfigurer corsConfigurer(ApiKeyInterceptor apiKeyInterceptor) {
         return new WebMvcConfigurer() {
             @Override
             public void addCorsMappings(CorsRegistry registry) {
@@ -94,6 +95,13 @@ public class CodeCanvasConfig {
                         .allowedOriginPatterns("http://localhost:*", "http://127.0.0.1:*")
                         .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
                         .allowedHeaders("*");
+            }
+
+            @Override
+            public void addInterceptors(InterceptorRegistry registry) {
+                // S5 安全修复: 所有 /api/** 接口 (含 SSE 流式 /api/chat/stream) 必须带 X-API-Key,
+                // 缺失或错误一律拒绝 (fail-closed)。密钥由环境变量 CODECANVAS_API_KEY 提供。
+                registry.addInterceptor(apiKeyInterceptor).addPathPatterns("/api/**");
             }
         };
     }
