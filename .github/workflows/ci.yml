@@ -25,7 +25,14 @@ jobs:
       - name: Compile
         run: mvn -B -q clean compile
 
-      # 6 个测试类覆盖 Agent 编排、HTML 校验器、模型路由、Token 计量与数据层。
+      # C1 执行级验证依赖无头浏览器。安装 chromium 让运行时验证能在 CI 真跑；
+      # 若受环境限制装不上，验证器会自动降级为仅静态校验（SKIPPED），不影响构建。
+      - name: Install headless browser (Chromium)
+        working-directory: .
+        continue-on-error: true
+        run: npx -y playwright@1.62.1 install --with-deps chromium
+
+      # 测试类覆盖 Agent 编排、HTML 校验器、模型路由、Token 计量、数据层，以及 C1 运行时验证策略。
       # MockLlmProvider 让测试无需真实模型调用即可跑通自检修复闭环。
       - name: Unit tests
         run: mvn -B test

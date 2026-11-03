@@ -18,6 +18,9 @@ import com.codecanvas.project.ProjectService;
 import com.codecanvas.project.VersionSnapshot;
 import com.codecanvas.sandbox.IframeSandboxExecutor;
 import com.codecanvas.sandbox.SandboxedPreview;
+import com.codecanvas.verification.RuntimeReport;
+import com.codecanvas.verification.RuntimeVerificationPolicy;
+import com.codecanvas.verification.RuntimeVerifier;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -54,17 +57,23 @@ public class AgentOrchestrator {
     private final ContextAssembler contextAssembler;
     private final TokenMeter meter;
     private final IframeSandboxExecutor sandbox;
+    private final RuntimeVerifier runtimeVerifier;
+    private final RuntimeVerificationPolicy runtimePolicy;
 
     public AgentOrchestrator(ProjectService projectService,
                              LlmGateway gateway,
                              ContextAssembler contextAssembler,
                              TokenMeter meter,
-                             IframeSandboxExecutor sandbox) {
+                             IframeSandboxExecutor sandbox,
+                             RuntimeVerifier runtimeVerifier,
+                             RuntimeVerificationPolicy runtimePolicy) {
         this.projectService = projectService;
         this.gateway = gateway;
         this.contextAssembler = contextAssembler;
         this.meter = meter;
         this.sandbox = sandbox;
+        this.runtimeVerifier = runtimeVerifier;
+        this.runtimePolicy = runtimePolicy;
     }
 
     public void run(AgentRunRequest request, AgentListener listener) {
@@ -268,7 +277,20 @@ public class AgentOrchestrator {
         Map<String, Object> args = Map.of("path", MAIN_FILE);
         String result = tools.call("validate_html", args);
         listener.onToolCall("validate_html", args, result);
-        return HtmlValidator.validate(workspace.read(MAIN_FILE));
+        List<HtmlValidator.Issue> issues = HtmlValidator.validate(workspace.read(MAIN_FILE));
+
+        // 执行级验证：把生成的页面真在浏览器里跑一遍，把"能预览"变成"跑得过验收"。
+        // 运行时问题合并进同一份清单，复用已有的"回注 → 修复 → 重验"闭环；
+        // 环境无浏览器时 verify 回 skipped 报告，不阻断交付，行为与改造前一致（仅静态校验）。
+        if (runtimePolicy.enabled()) {
+            RuntimeReport report = runtimeVerifier.verify(workspace.mainContent(), runtimePolicy.defaultSpec());
+            listener.onToolCall("verify_runtime", Map.of("path", MAIN_FILE), report.summary());
+            if (report.skipped()) {
+                listener.onStatus("运行时验证不可用，已跳过，仅做静态校验");
+            }
+            issues = runtimePolicy.merge(issues, report);
+        }
+        return issues;
     }
 
     private String buildUserPrompt(LlmPurpose purpose,

@@ -20,6 +20,18 @@ codecanvas:
   llm:
     # auto=有密钥用真实模型，否则退回离线引擎；real=强制真实；mock=强制离线
     mode: ${CODECANVAS_LLM_MODE:auto}
+  runtime-verify:
+    # C1 执行级验证闭环：把生成的页面放进无头浏览器真跑一遍（加载/点按钮/断言/截图），
+    # 失败信息结构化回注到自检修复闭环。无 Playwright 时自动降级为仅静态校验，不影响交付。
+    enabled: ${CODECANVAS_RUNTIME_VERIFY_ENABLED:true}
+    # Node 运行时命令（需能解析到 playwright）
+    node-command: ${CODECANVAS_RUNTIME_VERIFY_NODE:node}
+    # 验证脚本相对路径，找不到时会在工作目录逐级向上回退查找 tools/runtime-verify.mjs
+    node-script: ${CODECANVAS_RUNTIME_VERIFY_SCRIPT:tools/runtime-verify.mjs}
+    # 是否自动点一次主按钮并观察是否抛异常
+    click-main-button: ${CODECANVAS_RUNTIME_VERIFY_CLICK:true}
+    # 单次验证整体超时（毫秒），超时则降级为仅静态校验
+    timeout-ms: ${CODECANVAS_RUNTIME_VERIFY_TIMEOUT:15000}
     # openai=OpenAI 兼容协议（DeepSeek / GLM / 通义 / 硅基流动等）；anthropic=Anthropic 协议
     active-provider: ${CODECANVAS_PROVIDER:openai}
     openai:
