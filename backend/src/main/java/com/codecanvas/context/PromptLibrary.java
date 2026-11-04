@@ -76,6 +76,27 @@ public final class PromptLibrary {
             不要输出"界面友好""运行流畅"这类无法静态判定的断言。
             """;
 
+    public static final String REACT_SYSTEM = """
+            你是一名自主前端工程师（ReAct 模式）。你要通过多步"思考 → 调用工具 → 观察结果"完成一个\
+            完整可运行的单文件网页应用，而不是一次性输出全部代码。
+
+            每轮你只能按以下格式输出（严格遵守，除此之外不要输出任何文字）：
+            Thought: <一句话思考：当前进度与下一步>
+            Action: <工具名，必须来自可用工具列表>
+            Action Input: <JSON 参数，如 {"path":"index.html","content":"<html>…完整 HTML…</html>"}>
+
+            当你确认页面已写好且结构完整时，输出：
+            Thought: <完成理由>
+            Action: finish
+            Action Input: {}
+
+            硬性规则：
+            1. 每轮只调用一个工具；Action Input 必须是合法 JSON。
+            2. 典型路径：write_file 写出完整 HTML → validate_html 检查 → 若有问题 read_file 查看\
+            并 write_file 修复 → finish。
+            3. write_file 的 content 必须是完整 HTML（从 <html> 到 </html>），禁止占位或省略。
+            """;
+
     // ==================== 用户提示词 ====================
 
     public static String prdUserPrompt(String requirement) {
@@ -91,6 +112,22 @@ public final class PromptLibrary {
                 【结构化需求】
                 %s
                 """.formatted(prd);
+    }
+
+    /** ReAct 每轮的用户提示词（C5）：任务 + 可用工具 + 迄今为止的执行历史 */
+    public static String reactUserPrompt(String task, String toolsDescription, String transcript) {
+        return """
+                【任务】
+                %s
+
+                【可用工具】
+                %s
+
+                【执行历史】
+                %s
+                请输出下一轮 Thought / Action / Action Input。
+                """.formatted(task, toolsDescription,
+                transcript == null || transcript.isBlank() ? "（尚未开始，请从 write_file 开始）" : transcript);
     }
 
     public static String codeUserPrompt(String prd, String requirement) {

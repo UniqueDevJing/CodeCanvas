@@ -5,6 +5,7 @@ import com.codecanvas.agent.tool.ToolRegistry;
 import com.codecanvas.agent.trace.RunTrace;
 import com.codecanvas.agent.trace.RunTraceRecorder;
 import com.codecanvas.agent.trace.RunTraceStore;
+import com.codecanvas.agent.react.ReActAgent;
 import com.codecanvas.acceptance.AcceptanceEvaluator;
 import com.codecanvas.acceptance.AcceptanceSpec;
 import com.codecanvas.common.CodeExtractor;
@@ -75,6 +76,10 @@ public class AgentOrchestrator {
     @Value("${codecanvas.acceptance.enabled:true}")
     private boolean acceptanceEnabled;
 
+    /** C5：ReAct 自主循环的步数上限（三重终止条件之一；另两个是预算耗尽与校验通过） */
+    @Value("${codecanvas.react.max-steps:10}")
+    private int reactMaxSteps;
+
     public AgentOrchestrator(ProjectService projectService,
                              LlmGateway gateway,
                              ContextAssembler contextAssembler,
@@ -98,7 +103,9 @@ public class AgentOrchestrator {
     public void run(AgentRunRequest request, AgentListener listener) {
         // C3 执行轨迹：每次运行一个 runId，录制全部回调后落盘，供回放与 diff
         RunTraceRecorder recorder = new RunTraceRecorder(RunTrace.newId(), listener);
-        recorder.begin(String.valueOf(request.trigger()), request.message());
+        recorder.begin(String.valueOf(request.trigger()),
+                request.strategy() == null ? "PIPELINE" : request.strategy().name(),
+                request.message());
         TokenMeter.RunMeter run = meter.newRunMeter();
         try {
             doRun(request, recorder, run);
@@ -189,7 +196,7 @@ public class AgentOrchestrator {
         Map<String, Object> listArgs = Map.of();
         listener.onToolCall("list_files", listArgs, tools.call("list_files", listArgs));
 
-        // ============ 3. 代码生成 ============
+        // ============ 3. 代码生成（两条可切换的执行路径：REACT 自主循环 / PIPELINE 固定流水线）============
         ContextAssembler.Selection selection = contextAssembler.select(project.files(), requirement);
         int rawContextTokens = rawContextTokens(project, requirement);
 
@@ -217,25 +224,66 @@ public class AgentOrchestrator {
                 ? "正在修复报错"
                 : "正在写页面代码");
 
-        LlmGateway.CallResult generateCall = gateway.callStreaming(
-                new LlmRequest(purpose, genRoute.model(), systemPrompt, userPrompt, 0.3, 8192),
-                genRoute,
-                delta -> listener.onDelta(MAIN_FILE, delta),
-                run);
+        // C5：REACT 路径——模型自己决定"先写什么、何时校验、要不要重写"，
+        // maxSteps / 预算耗尽 / 校验通过三重终止；产不出页面时自动退回流水线兜底。
+        LlmGateway.CallResult generateCall = null;
+        if (request.strategy() == AgentRunRequest.Strategy.REACT) {
+            listener.onStatus("自主模式（ReAct）：模型将自行决定调用工具的顺序");
+            final LlmGateway.CallResult[] lastCall = new LlmGateway.CallResult[1];
+            ReActAgent reactAgent = new ReActAgent(prompt -> {
+                LlmGateway.CallResult r = gateway.call(
+                        new LlmRequest(LlmPurpose.CODE, genRoute.model(),
+                                PromptLibrary.REACT_SYSTEM, prompt, 0.3, 8192),
+                        genRoute, run);
+                lastCall[0] = r;
+                return r.response().text();
+            }, tools, reactMaxSteps);
+            ReActAgent.Outcome outcome = reactAgent.run(
+                    requirement + (prd == null || prd.isBlank() ? "" : "\n【结构化需求】\n" + prd),
+                    () -> !budgetPolicy.exceeded(budget, run.snapshot()),
+                    new ReActAgent.Validation() {
+                        @Override
+                        public boolean passed() {
+                            return HtmlValidator.validate(workspace.read(MAIN_FILE)).isEmpty();
+                        }
 
-        String html = CodeExtractor.extractHtml(generateCall.response().text());
-        String previous = project.mainFileContent();
-        if (html.isBlank() || (!html.toLowerCase().contains("<html") && !previous.isBlank())) {
-            listener.onStatus("这次没生成出完整页面，我先保留上一版再检查一遍");
-            html = previous.isBlank() ? html : previous;
+                        @Override
+                        public String detail() {
+                            return HtmlValidator.describe(HtmlValidator.validate(workspace.read(MAIN_FILE)));
+                        }
+                    },
+                    (tool, brief) -> listener.onToolCall(tool, Map.of(), brief));
+            generateCall = lastCall[0];
+            listener.onStatus("自主模式结束（" + outcome.stopReason() + "）："
+                    + outcome.steps() + " 轮 / " + outcome.toolCalls() + " 次工具调用"
+                    + (outcome.completed() ? "，页面已通过校验" : "，转入固定校验与修复流程"));
         }
-        Map<String, Object> writeArgs = new LinkedHashMap<>();
-        writeArgs.put("path", MAIN_FILE);
-        writeArgs.put("content", html);
-        tools.call("write_file", writeArgs);
-        listener.onToolCall("write_file", Map.of("path", MAIN_FILE, "chars", html.length()),
-                "已写入 " + MAIN_FILE + "（" + html.length() + " 字符）");
-        listener.onFile(MAIN_FILE, previous.isBlank() ? "create" : "update", byteLengthOf(html));
+
+        if (generateCall == null || workspace.read(MAIN_FILE).isBlank()) {
+            // 流水线路径（默认；也是 REACT 产不出内容时的兜底）
+            LlmGateway.CallResult pipelineCall = gateway.callStreaming(
+                    new LlmRequest(purpose, genRoute.model(), systemPrompt, userPrompt, 0.3, 8192),
+                    genRoute,
+                    delta -> listener.onDelta(MAIN_FILE, delta),
+                    run);
+            generateCall = pipelineCall;
+
+            String html = CodeExtractor.extractHtml(pipelineCall.response().text());
+            String previous = project.mainFileContent();
+            if (html.isBlank() || (!html.toLowerCase().contains("<html") && !previous.isBlank())) {
+                listener.onStatus("这次没生成出完整页面，我先保留上一版再检查一遍");
+                html = previous.isBlank() ? html : previous;
+            }
+            Map<String, Object> writeArgs = new LinkedHashMap<>();
+            writeArgs.put("path", MAIN_FILE);
+            writeArgs.put("content", html);
+            tools.call("write_file", writeArgs);
+            listener.onToolCall("write_file", Map.of("path", MAIN_FILE, "chars", html.length()),
+                    "已写入 " + MAIN_FILE + "（" + html.length() + " 字符）");
+            listener.onFile(MAIN_FILE, previous.isBlank() ? "create" : "update", byteLengthOf(html));
+        } else {
+            listener.onFile(MAIN_FILE, "update", byteLengthOf(workspace.read(MAIN_FILE)));
+        }
 
         // ============ 4. 质量校验 ============
         listener.onStage(AgentStage.VALIDATE, "正在检查页面能不能正常打开");

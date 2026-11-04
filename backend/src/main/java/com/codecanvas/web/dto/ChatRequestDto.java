@@ -6,13 +6,15 @@ import java.util.List;
 /**
  * 对话生成请求。
  *
- * @param trigger USER=用户提需求；RUNTIME_ERROR=前端捕获到运行时报错后自动触发修复
+ * @param trigger  USER=用户提需求；RUNTIME_ERROR=前端捕获到运行时报错后自动触发修复
+ * @param strategy 可选：react=走模型自主 ReAct 循环（C5 A/B 对照）；缺省=pipeline 固定流水线
  */
 public record ChatRequestDto(
         String projectId,
         String message,
         String trigger,
-        List<RuntimeErrorDto> errors) {
+        List<RuntimeErrorDto> errors,
+        String strategy) {
 
     /** 前端从预览 iframe 里捕获到的运行时错误。 */
     public record RuntimeErrorDto(String message, String source, Integer line, String stack) {
@@ -22,6 +24,9 @@ public record ChatRequestDto(
         AgentRunRequest.Trigger type = "RUNTIME_ERROR".equalsIgnoreCase(trigger)
                 ? AgentRunRequest.Trigger.RUNTIME_ERROR
                 : AgentRunRequest.Trigger.USER;
+        AgentRunRequest.Strategy mode = "react".equalsIgnoreCase(strategy)
+                ? AgentRunRequest.Strategy.REACT
+                : AgentRunRequest.Strategy.PIPELINE;
         List<AgentRunRequest.RuntimeError> list = errors == null ? List.of() : errors.stream()
                 .map(e -> new AgentRunRequest.RuntimeError(
                         e.message(),
@@ -32,6 +37,6 @@ public record ChatRequestDto(
         String text = message == null || message.isBlank()
                 ? (type == AgentRunRequest.Trigger.RUNTIME_ERROR ? "页面运行时报错，请修复" : "")
                 : message;
-        return new AgentRunRequest(projectId, text, type, list, null);
+        return new AgentRunRequest(projectId, text, type, list, null, mode);
     }
 }

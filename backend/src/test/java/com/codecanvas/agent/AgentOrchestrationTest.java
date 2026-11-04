@@ -101,7 +101,7 @@ class AgentOrchestrationTest {
         orchestrator.run(new AgentRunRequest(projectId, "", AgentRunRequest.Trigger.RUNTIME_ERROR,
                 List.of(new AgentRunRequest.RuntimeError(
                         "SecurityError: Failed to read the 'localStorage' property from 'Window'",
-                        "index.html", 103, ""))), healed);
+                        "index.html", 103, "")), null, AgentRunRequest.Strategy.PIPELINE), healed);
 
         assertNotNull(healed.result, "应产出结果");
         String content = healed.result.files().get(0).content();

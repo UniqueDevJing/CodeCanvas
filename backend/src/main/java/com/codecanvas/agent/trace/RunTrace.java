@@ -21,6 +21,7 @@ public record RunTrace(
         boolean ok,
         String error,
         String trigger,
+        String strategy,
         String requirement,
         int toolCalls,
         int healAttempts,

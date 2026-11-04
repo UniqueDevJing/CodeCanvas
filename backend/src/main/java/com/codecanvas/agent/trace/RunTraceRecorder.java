@@ -20,6 +20,7 @@ public class RunTraceRecorder implements com.codecanvas.agent.AgentListener {
 
     private volatile String projectId;
     private volatile String trigger;
+    private volatile String strategy;
     private volatile String requirement;
     private volatile String currentStage;
     private final Map<String, Long> deltaChars = new LinkedHashMap<>();   // path -> 聚合字符数
@@ -48,8 +49,9 @@ public class RunTraceRecorder implements com.codecanvas.agent.AgentListener {
     }
 
     /** 传入触发上下文（编排层在 run 开始时调用一次） */
-    public void begin(String trigger, String requirement) {
+    public void begin(String trigger, String strategy, String requirement) {
         this.trigger = trigger;
+        this.strategy = strategy;
         this.requirement = requirement;
     }
 
@@ -177,7 +179,8 @@ public class RunTraceRecorder implements com.codecanvas.agent.AgentListener {
                 "流式输出 " + path + "：" + chars + " 字符 / " + deltaCount.get(path) + " 段",
                 Map.of("path", path, "chars", chars, "deltas", deltaCount.get(path)))));
         return new RunTrace(runId, projectId, start, finishedAt, Math.max(0, finishedAt - start),
-                ok, error, trigger == null ? "" : trigger, requirement == null ? "" : requirement,
+                ok, error, trigger == null ? "" : trigger, strategy == null ? "" : strategy,
+                requirement == null ? "" : requirement,
                 toolCalls, healAttempts, recovered, model == null ? "" : model, tier == null ? "" : tier,
                 cost, baselineCost, promptTokens, completionTokens, contextInjected, contextRaw,
                 versionId == null ? "" : versionId, versionLabel == null ? "" : versionLabel,
