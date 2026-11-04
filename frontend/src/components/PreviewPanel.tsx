@@ -4,6 +4,7 @@ import { PreviewStage } from './PreviewStage';
 import { PreviewToolbar } from './PreviewToolbar';
 import { QualityPanel } from './QualityPanel';
 import { UsagePanel } from './UsagePanel';
+import { TraceReplayPanel } from './TraceReplayPanel';
 import { VersionTimeline } from './VersionTimeline';
 import { ChevronDownIcon, SparkIcon } from './icons';
 import type { DeviceKind, PreviewTab } from './previewTypes';
@@ -130,6 +131,8 @@ export function PreviewPanel({
         )}
 
         {tab === 'usage' && <UsagePanel tokens={tokens} />}
+
+        {tab === 'trace' && <TraceReplayPanel />}
       </div>
     </section>
   );

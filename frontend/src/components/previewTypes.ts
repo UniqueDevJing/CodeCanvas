@@ -1,4 +1,4 @@
-export type PreviewTab = 'preview' | 'code' | 'quality' | 'versions' | 'usage';
+export type PreviewTab = 'preview' | 'code' | 'quality' | 'versions' | 'usage' | 'trace';
 
 export type DeviceKind = 'desktop' | 'tablet' | 'mobile';
 

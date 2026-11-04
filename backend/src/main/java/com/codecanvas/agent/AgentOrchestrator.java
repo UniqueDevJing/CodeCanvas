@@ -2,6 +2,9 @@ package com.codecanvas.agent;
 
 import com.codecanvas.agent.tool.AgentWorkspace;
 import com.codecanvas.agent.tool.ToolRegistry;
+import com.codecanvas.agent.trace.RunTrace;
+import com.codecanvas.agent.trace.RunTraceRecorder;
+import com.codecanvas.agent.trace.RunTraceStore;
 import com.codecanvas.common.CodeExtractor;
 import com.codecanvas.common.HtmlValidator;
 import com.codecanvas.common.TokenEstimator;
@@ -62,6 +65,7 @@ public class AgentOrchestrator {
     private final RuntimeVerifier runtimeVerifier;
     private final RuntimeVerificationPolicy runtimePolicy;
     private final BudgetPolicy budgetPolicy;
+    private final RunTraceStore traceStore;
 
     public AgentOrchestrator(ProjectService projectService,
                              LlmGateway gateway,
@@ -70,7 +74,8 @@ public class AgentOrchestrator {
                              IframeSandboxExecutor sandbox,
                              RuntimeVerifier runtimeVerifier,
                              RuntimeVerificationPolicy runtimePolicy,
-                             BudgetPolicy budgetPolicy) {
+                             BudgetPolicy budgetPolicy,
+                             RunTraceStore traceStore) {
         this.projectService = projectService;
         this.gateway = gateway;
         this.contextAssembler = contextAssembler;
@@ -79,15 +84,22 @@ public class AgentOrchestrator {
         this.runtimeVerifier = runtimeVerifier;
         this.runtimePolicy = runtimePolicy;
         this.budgetPolicy = budgetPolicy;
+        this.traceStore = traceStore;
     }
 
     public void run(AgentRunRequest request, AgentListener listener) {
+        // C3 执行轨迹：每次运行一个 runId，录制全部回调后落盘，供回放与 diff
+        RunTraceRecorder recorder = new RunTraceRecorder(RunTrace.newId(), listener);
+        recorder.begin(String.valueOf(request.trigger()), request.message());
         TokenMeter.RunMeter run = meter.newRunMeter();
         try {
-            doRun(request, listener, run);
+            doRun(request, recorder, run);
+            traceStore.save(recorder.finish(null));
         } catch (Exception e) {
             log.error("Agent 运行失败", e);
-            listener.onError(e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
+            String message = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+            traceStore.save(recorder.finish(message));
+            listener.onError(message);
         }
     }
 

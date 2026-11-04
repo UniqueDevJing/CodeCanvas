@@ -16,6 +16,7 @@ const TABS: { key: PreviewTab; label: string }[] = [
   { key: 'quality', label: '质检' },
   { key: 'versions', label: '版本' },
   { key: 'usage', label: '用量' },
+  { key: 'trace', label: '轨迹' },
 ];
 
 const DEVICES: { key: DeviceKind; label: string; icon: typeof DesktopIcon }[] = [

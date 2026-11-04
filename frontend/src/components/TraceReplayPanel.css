@@ -1,0 +1,199 @@
+/* 执行轨迹面板（C3 时间旅行） */
+
+.trace-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  height: 100%;
+  overflow-y: auto;
+  font-size: 12px;
+}
+
+.trace-hint {
+  padding: 16px 14px;
+  color: var(--text-dim, #8a8f98);
+  font-size: 12px;
+}
+
+.trace-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.trace-title {
+  font-weight: 600;
+}
+
+.trace-mode {
+  color: var(--text-dim, #8a8f98);
+}
+
+.trace-run-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.trace-run {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 8px;
+  align-items: baseline;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--border, #e2e5e9);
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  font-size: 12px;
+}
+
+.trace-run:hover {
+  border-color: var(--accent, #4f7cff);
+}
+
+.trace-run.is-active {
+  border-color: var(--accent, #4f7cff);
+  background: color-mix(in srgb, var(--accent, #4f7cff) 8%, transparent);
+}
+
+.trace-run.is-failed .trace-run-req {
+  color: #c0392b;
+}
+
+.trace-run-time {
+  color: var(--text-dim, #8a8f98);
+  font-variant-numeric: tabular-nums;
+}
+
+.trace-run-req {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trace-run-meta {
+  color: var(--text-dim, #8a8f98);
+  white-space: nowrap;
+}
+
+.trace-replay {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 1px solid var(--border, #e2e5e9);
+  padding-top: 8px;
+}
+
+.trace-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.trace-controls button {
+  padding: 3px 10px;
+  border: 1px solid var(--border, #e2e5e9);
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.trace-progress-label {
+  color: var(--text-dim, #8a8f98);
+  font-variant-numeric: tabular-nums;
+}
+
+.trace-scrub {
+  width: 100%;
+}
+
+.trace-events {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.trace-event {
+  display: grid;
+  grid-template-columns: 44px 62px 1fr;
+  gap: 8px;
+  padding: 3px 6px;
+  border-radius: 4px;
+}
+
+.trace-event:nth-child(odd) {
+  background: color-mix(in srgb, var(--border, #e2e5e9) 30%, transparent);
+}
+
+.trace-event-t {
+  color: var(--text-dim, #8a8f98);
+  font-variant-numeric: tabular-nums;
+}
+
+.trace-event-type {
+  font-weight: 600;
+}
+
+.trace-event.is-error .trace-event-type { color: #c0392b; }
+.trace-event.is-heal .trace-event-type { color: #d97706; }
+.trace-event.is-result .trace-event-type { color: #15803d; }
+.trace-event.is-stage .trace-event-type { color: var(--accent, #4f7cff); }
+
+.trace-event-detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trace-diff {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 1px solid var(--border, #e2e5e9);
+  padding-top: 8px;
+}
+
+.trace-diff-head {
+  font-weight: 600;
+}
+
+.trace-diff-notes {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.trace-diff-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.trace-diff-table th,
+.trace-diff-table td {
+  border: 1px solid var(--border, #e2e5e9);
+  padding: 3px 8px;
+  text-align: left;
+}
+
+.trace-diff-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--text-dim, #8a8f98);
+}
