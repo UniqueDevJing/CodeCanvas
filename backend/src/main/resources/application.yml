@@ -36,6 +36,10 @@ codecanvas:
     # C4 验收断言：从 PRD 自动生成 3 条断言作为"生成完成"的客观判据，
     # 未通过的断言并入自检修复闭环（回注 → 修复 → 重验）。
     enabled: ${CODECANVAS_ACCEPTANCE_ENABLED:true}
+    # C-A 语义档：kind=semantic 的断言按"断言描述 vs 页面可见文本"嵌入相似度判定。
+    # 默认关闭（未配置打分器时语义断言诚实降级为不纳入判据，绝不假装通过）。
+    semantic-enabled: ${CODECANVAS_ACCEPTANCE_SEMANTIC:false}
+    semantic-model: ${CODECANVAS_ACCEPTANCE_SEMANTIC_MODEL:text-embedding-v3}
   react:
     # C5 真 ReAct 分支：请求带 strategy=react 时走模型自主循环（自己决定调用什么工具），
     # 与固定流水线做 A/B 对照。三重终止：max-steps / 预算耗尽 / 校验通过。

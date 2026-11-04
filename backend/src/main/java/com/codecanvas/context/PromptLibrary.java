@@ -68,6 +68,8 @@ public final class PromptLibrary {
             字段要求：
             - id 固定为 a1 / a2 / a3；
             - kind 固定为 dom（表示通过检查 HTML 源码判定）；
+              仅当某条核心功能无法用任何词面/结构特征表达时，才允许该条用
+              kind=semantic（此时 target 填功能的一句话中文描述），最多 1 条；
             - target 是要在 HTML 里查找的具体标记：标签片段（如 <canvas>）、id 或 class（如 id="timer"）、
               或必须出现的关键文案；必须是生成页面几乎必然包含的东西，不要写凭空猜测的类名；
             - description 是给用户看的中文断言描述，一句话，具体不空泛。

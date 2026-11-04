@@ -8,6 +8,7 @@ import com.codecanvas.agent.trace.RunTraceStore;
 import com.codecanvas.agent.react.ReActAgent;
 import com.codecanvas.acceptance.AcceptanceEvaluator;
 import com.codecanvas.acceptance.AcceptanceSpec;
+import com.codecanvas.acceptance.SemanticScorer;
 import com.codecanvas.common.CodeExtractor;
 import com.codecanvas.common.HtmlValidator;
 import com.codecanvas.common.TokenEstimator;
@@ -35,6 +36,7 @@ import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -75,6 +77,10 @@ public class AgentOrchestrator {
     /** C4：验收断言生成开关（断言作为"生成完成"的客观判据，失败并入自检修复闭环） */
     @Value("${codecanvas.acceptance.enabled:true}")
     private boolean acceptanceEnabled;
+
+    /** C-A：语义打分器（semantic-enabled=true 时注入；缺省 null → 语义断言诚实降级） */
+    @Autowired(required = false)
+    private SemanticScorer semanticScorer;
 
     /** C5：ReAct 自主循环的步数上限（三重终止条件之一；另两个是预算耗尽与校验通过） */
     @Value("${codecanvas.react.max-steps:10}")
@@ -356,14 +362,15 @@ public class AgentOrchestrator {
                 tools.trace(),
                 // 质检报告按最终交付的内容生成，而不是按中间某次尝试；
                 // C4 验收断言的核对结果一并进入报告（前端质检面板直接渲染）
-                qualityReport(workspace.mainContent(), acceptance),
+                qualityReport(workspace.mainContent(), acceptance, semanticScorer),
                 usageView));
     }
 
-    /** 质检报告 = 固定四维检查 + 验收断言逐条结果（C4） */
-    private List<HtmlValidator.CheckResult> qualityReport(String html, AcceptanceSpec acceptance) {
+    /** 质检报告 = 固定四维检查 + 验收断言逐条结果（C4/C-A） */
+    private List<HtmlValidator.CheckResult> qualityReport(String html, AcceptanceSpec acceptance,
+                                                          SemanticScorer scorer) {
         List<HtmlValidator.CheckResult> report = new ArrayList<>(HtmlValidator.report(html));
-        report.addAll(AcceptanceEvaluator.evaluate(html, acceptance));
+        report.addAll(AcceptanceEvaluator.evaluate(html, acceptance, scorer));
         return List.copyOf(report);
     }
 
@@ -415,7 +422,7 @@ public class AgentOrchestrator {
         if (acceptance != null && !acceptance.isEmpty()) {
             Map<String, Object> accArgs = Map.of("checks", acceptance.checks().size());
             List<HtmlValidator.CheckResult> accResults =
-                    AcceptanceEvaluator.evaluate(workspace.read(MAIN_FILE), acceptance);
+                    AcceptanceEvaluator.evaluate(workspace.read(MAIN_FILE), acceptance, semanticScorer);
             long passed = accResults.stream().filter(HtmlValidator.CheckResult::passed).count();
             listener.onToolCall("verify_acceptance", accArgs,
                     "验收断言 " + passed + "/" + accResults.size() + " 通过");
