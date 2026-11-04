@@ -32,6 +32,6 @@ public record ChatRequestDto(
         String text = message == null || message.isBlank()
                 ? (type == AgentRunRequest.Trigger.RUNTIME_ERROR ? "页面运行时报错，请修复" : "")
                 : message;
-        return new AgentRunRequest(projectId, text, type, list);
+        return new AgentRunRequest(projectId, text, type, list, null);
     }
 }

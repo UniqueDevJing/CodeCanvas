@@ -32,6 +32,15 @@ codecanvas:
     click-main-button: ${CODECANVAS_RUNTIME_VERIFY_CLICK:true}
     # 单次验证整体超时（毫秒），超时则降级为仅静态校验
     timeout-ms: ${CODECANVAS_RUNTIME_VERIFY_TIMEOUT:15000}
+  budget:
+    # C2 预算感知调度：把 TokenMeter 的事后计量升级为准入控制。
+    # 每任务可经 AgentRunRequest.budget 下发三元预算；此处为"启用时的默认预算"（全 0 = 不预设，按请求下发）。
+    enabled: ${CODECANVAS_BUDGET_ENABLED:true}
+    default-max-cost-yuan: ${CODECANVAS_BUDGET_MAX_COST:0}
+    default-max-latency-ms: ${CODECANVAS_BUDGET_MAX_LATENCY:0}
+    default-max-tokens: ${CODECANVAS_BUDGET_MAX_TOKENS:0}
+    # 无预算时仍允许的最大自检修复轮次（与改造前一致）
+    max-heal-attempts: ${CODECANVAS_BUDGET_MAX_HEAL:3}
     # openai=OpenAI 兼容协议（DeepSeek / GLM / 通义 / 硅基流动等）；anthropic=Anthropic 协议
     active-provider: ${CODECANVAS_PROVIDER:openai}
     openai:

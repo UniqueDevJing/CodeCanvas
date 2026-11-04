@@ -12,6 +12,8 @@ import com.codecanvas.llm.LlmPurpose;
 import com.codecanvas.llm.LlmRequest;
 import com.codecanvas.llm.RouteDecision;
 import com.codecanvas.llm.TokenMeter;
+import com.codecanvas.llm.BudgetPolicy;
+import com.codecanvas.llm.TaskBudget;
 import com.codecanvas.project.Project;
 import com.codecanvas.project.ProjectFile;
 import com.codecanvas.project.ProjectService;
@@ -59,6 +61,7 @@ public class AgentOrchestrator {
     private final IframeSandboxExecutor sandbox;
     private final RuntimeVerifier runtimeVerifier;
     private final RuntimeVerificationPolicy runtimePolicy;
+    private final BudgetPolicy budgetPolicy;
 
     public AgentOrchestrator(ProjectService projectService,
                              LlmGateway gateway,
@@ -66,7 +69,8 @@ public class AgentOrchestrator {
                              TokenMeter meter,
                              IframeSandboxExecutor sandbox,
                              RuntimeVerifier runtimeVerifier,
-                             RuntimeVerificationPolicy runtimePolicy) {
+                             RuntimeVerificationPolicy runtimePolicy,
+                             BudgetPolicy budgetPolicy) {
         this.projectService = projectService;
         this.gateway = gateway;
         this.contextAssembler = contextAssembler;
@@ -74,6 +78,7 @@ public class AgentOrchestrator {
         this.sandbox = sandbox;
         this.runtimeVerifier = runtimeVerifier;
         this.runtimePolicy = runtimePolicy;
+        this.budgetPolicy = budgetPolicy;
     }
 
     public void run(AgentRunRequest request, AgentListener listener) {
@@ -154,13 +159,26 @@ public class AgentOrchestrator {
         };
         String userPrompt = buildUserPrompt(purpose, prd, requirement, workspace, selection, request, project);
 
+        // ============ 预算感知调度（C2） ============
+        // 规划阶段就按预算决定档位与自检修复轮次：路由想要的档位负担得起就保留（保质量），
+        // 否则降级到第一个负担得起的档位；预算吃紧自动收减 HEAL 轮次；连最便宜档都超则降级并关闭修复。
+        TaskBudget budget = budgetPolicy.resolve(request.budget());
+        BudgetPolicy.BudgetDecision budgetDecision = budgetPolicy.decide(
+                route, budget, TokenEstimator.estimate(userPrompt), 8192);
+        RouteDecision genRoute = budgetDecision.route();
+        if (budgetDecision.overBudget()) {
+            listener.onStatus("预算不足：预估成本超过预算上限，已降级到最便宜档位并关闭自检修复以保证可用");
+        } else if (budget != null && budget.hasCost()) {
+            listener.onStatus("预算约束已生效：" + budgetDecision.reason());
+        }
+
         listener.onStage(AgentStage.GENERATE, purpose == LlmPurpose.FIX
                 ? "正在修复报错"
                 : "正在写页面代码");
 
         LlmGateway.CallResult generateCall = gateway.callStreaming(
-                new LlmRequest(purpose, route.model(), systemPrompt, userPrompt, 0.3, 8192),
-                route,
+                new LlmRequest(purpose, genRoute.model(), systemPrompt, userPrompt, 0.3, 8192),
+                genRoute,
                 delta -> listener.onDelta(MAIN_FILE, delta),
                 run);
 
@@ -184,18 +202,17 @@ public class AgentOrchestrator {
 
         // ============ 5. 自检修复 ============
         int healAttempts = 0;
-        while (!issues.isEmpty() && healAttempts < MAX_HEAL_ATTEMPTS) {
+        int allowedHeal = budgetDecision.allowedHealAttempts();
+        while (!issues.isEmpty() && healAttempts < allowedHeal) {
             healAttempts++;
             String errorText = HtmlValidator.describe(issues);
             listener.onStage(AgentStage.HEAL, "发现一处问题，正在自动修复（第 " + healAttempts + " 次）");
             listener.onHeal(healAttempts, issues.get(0).message(), "已定位问题，正在做最小改动修复");
 
-            RouteDecision healRoute = gateway.router().route(LlmPurpose.FIX, errorText, false,
-                    workspace.paths().size());
             LlmGateway.CallResult fixCall = gateway.call(
-                    new LlmRequest(LlmPurpose.FIX, healRoute.model(), PromptLibrary.FIX_SYSTEM,
+                    new LlmRequest(LlmPurpose.FIX, genRoute.model(), PromptLibrary.FIX_SYSTEM,
                             PromptLibrary.fixUserPrompt(prd, workspace.snapshot(), errorText), 0.2, 8192),
-                    healRoute, run);
+                    genRoute, run);
 
             String fixed = CodeExtractor.extractHtml(fixCall.response().text());
             if (fixed.isBlank() || !fixed.toLowerCase().contains("<html")) {
@@ -205,6 +222,10 @@ public class AgentOrchestrator {
             workspace.write(MAIN_FILE, fixed);
             listener.onFile(MAIN_FILE, "update", byteLengthOf(fixed));
             issues = validate(tools, listener, workspace);
+            if (budgetPolicy.exceeded(budget, run.snapshot())) {
+                listener.onStatus("已达成本/Token 预算上限，停止自检修复（已交付当前最优版本）");
+                break;
+            }
         }
 
         boolean recovered = issues.isEmpty();
@@ -226,7 +247,7 @@ public class AgentOrchestrator {
         // 实际注入量按真正发出去的提示词算，不做美化
         ContextAssembler.ContextReport contextReport = ContextAssembler.report(
                 TokenEstimator.estimate(userPrompt), rawContextTokens);
-        UsageView usageView = usage(run, generateCall, route,
+        UsageView usageView = usage(run, generateCall, genRoute,
                 contextReport.injectedTokens(), contextReport.rawTokens());
 
         listener.onTokens(usageView);

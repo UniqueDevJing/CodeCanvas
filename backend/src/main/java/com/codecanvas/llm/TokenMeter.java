@@ -171,6 +171,11 @@ public class TokenMeter {
         return input / 1000.0 * inPrice + output / 1000.0 * outPrice;
     }
 
+    /** 预估一次调用成本（与 record 同口径），供预算调度在规划阶段提前估算档位成本。 */
+    public double estimateCost(ModelTier tier, int input, int output) {
+        return costOf(tier, input, output);
+    }
+
     /** 创建一次请求级别的计量器，用于统计"这一轮对话"的消耗。 */
     public RunMeter newRunMeter() {
         return new RunMeter(this);

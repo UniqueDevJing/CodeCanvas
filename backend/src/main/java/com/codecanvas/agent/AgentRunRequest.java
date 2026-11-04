@@ -1,5 +1,6 @@
 package com.codecanvas.agent;
 
+import com.codecanvas.llm.TaskBudget;
 import java.util.List;
 
 /**
@@ -11,7 +12,8 @@ public record AgentRunRequest(
         String projectId,
         String message,
         Trigger trigger,
-        List<RuntimeError> errors) {
+        List<RuntimeError> errors,
+        TaskBudget budget) {
 
     public enum Trigger {
         USER,
@@ -23,6 +25,11 @@ public record AgentRunRequest(
     }
 
     public static AgentRunRequest user(String projectId, String message) {
-        return new AgentRunRequest(projectId, message, Trigger.USER, List.of());
+        return new AgentRunRequest(projectId, message, Trigger.USER, List.of(), null);
+    }
+
+    /** 带预算下发的运行请求（C2 预算感知调度）。 */
+    public static AgentRunRequest user(String projectId, String message, TaskBudget budget) {
+        return new AgentRunRequest(projectId, message, Trigger.USER, List.of(), budget);
     }
 }
