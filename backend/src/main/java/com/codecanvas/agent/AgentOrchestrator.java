@@ -5,6 +5,8 @@ import com.codecanvas.agent.tool.ToolRegistry;
 import com.codecanvas.agent.trace.RunTrace;
 import com.codecanvas.agent.trace.RunTraceRecorder;
 import com.codecanvas.agent.trace.RunTraceStore;
+import com.codecanvas.acceptance.AcceptanceEvaluator;
+import com.codecanvas.acceptance.AcceptanceSpec;
 import com.codecanvas.common.CodeExtractor;
 import com.codecanvas.common.HtmlValidator;
 import com.codecanvas.common.TokenEstimator;
@@ -26,11 +28,13 @@ import com.codecanvas.sandbox.SandboxedPreview;
 import com.codecanvas.verification.RuntimeReport;
 import com.codecanvas.verification.RuntimeVerificationPolicy;
 import com.codecanvas.verification.RuntimeVerifier;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 /**
@@ -66,6 +70,10 @@ public class AgentOrchestrator {
     private final RuntimeVerificationPolicy runtimePolicy;
     private final BudgetPolicy budgetPolicy;
     private final RunTraceStore traceStore;
+
+    /** C4：验收断言生成开关（断言作为"生成完成"的客观判据，失败并入自检修复闭环） */
+    @Value("${codecanvas.acceptance.enabled:true}")
+    private boolean acceptanceEnabled;
 
     public AgentOrchestrator(ProjectService projectService,
                              LlmGateway gateway,
@@ -144,6 +152,27 @@ public class AgentOrchestrator {
             listener.onTokens(usage(run, prdCall, prdRoute, 0, 0));
         }
 
+        // ============ C4 验收断言生成 ============
+        // 从结构化需求（PRD）推导 3 条验收断言，作为本轮"生成完成"的客观判据；
+        // 只在首次生成/重建时生成（增量修改沿用既有页面形态，断言反而容易误伤）。
+        AcceptanceSpec acceptance = AcceptanceSpec.empty();
+        if (acceptanceEnabled && (firstTurn || rebuild)) {
+            try {
+                RouteDecision accRoute = gateway.router().route(LlmPurpose.PRD, requirement, true, 0);
+                LlmGateway.CallResult accCall = gateway.call(
+                        LlmRequest.of(LlmPurpose.PRD, accRoute.model(), PromptLibrary.ACCEPTANCE_SYSTEM,
+                                PromptLibrary.acceptanceUserPrompt(prd)),
+                        accRoute, run);
+                acceptance = AcceptanceSpec.parse(accCall.response().text());
+                if (!acceptance.isEmpty()) {
+                    listener.onStatus("已从需求推导出 " + acceptance.checks().size()
+                            + " 条验收断言，生成后会逐条自动核对");
+                }
+            } catch (Exception e) {
+                log.warn("验收断言生成失败（不阻断交付）: {}", e.getMessage());
+            }
+        }
+
         // ============ 2. 任务规划 ============
         LlmPurpose purpose = runtimeErrorRun ? LlmPurpose.FIX : ((firstTurn || rebuild) ? LlmPurpose.CODE : LlmPurpose.MODIFY);
         RouteDecision route = gateway.router().route(purpose, requirement + " " + prd, firstTurn,
@@ -210,7 +239,7 @@ public class AgentOrchestrator {
 
         // ============ 4. 质量校验 ============
         listener.onStage(AgentStage.VALIDATE, "正在检查页面能不能正常打开");
-        List<HtmlValidator.Issue> issues = validate(tools, listener, workspace);
+        List<HtmlValidator.Issue> issues = validate(tools, listener, workspace, acceptance);
 
         // ============ 5. 自检修复 ============
         int healAttempts = 0;
@@ -233,7 +262,7 @@ public class AgentOrchestrator {
             }
             workspace.write(MAIN_FILE, fixed);
             listener.onFile(MAIN_FILE, "update", byteLengthOf(fixed));
-            issues = validate(tools, listener, workspace);
+            issues = validate(tools, listener, workspace, acceptance);
             if (budgetPolicy.exceeded(budget, run.snapshot())) {
                 listener.onStatus("已达成本/Token 预算上限，停止自检修复（已交付当前最优版本）");
                 break;
@@ -277,9 +306,17 @@ public class AgentOrchestrator {
                 generateCall.response().model(),
                 generateCall.tier().label(),
                 tools.trace(),
-                // 质检报告按最终交付的内容生成，而不是按中间某次尝试
-                HtmlValidator.report(workspace.mainContent()),
+                // 质检报告按最终交付的内容生成，而不是按中间某次尝试；
+                // C4 验收断言的核对结果一并进入报告（前端质检面板直接渲染）
+                qualityReport(workspace.mainContent(), acceptance),
                 usageView));
+    }
+
+    /** 质检报告 = 固定四维检查 + 验收断言逐条结果（C4） */
+    private List<HtmlValidator.CheckResult> qualityReport(String html, AcceptanceSpec acceptance) {
+        List<HtmlValidator.CheckResult> report = new ArrayList<>(HtmlValidator.report(html));
+        report.addAll(AcceptanceEvaluator.evaluate(html, acceptance));
+        return List.copyOf(report);
     }
 
     /**
@@ -306,11 +343,12 @@ public class AgentOrchestrator {
             "做一个", "做个", "写一个", "写个", "设计一个", "设计个", "生成一个", "生成个",
             "创建一个", "创建个", "帮我做一个", "帮我写一个", "重新做", "重新生成", "换成做一个");
 
-    private List<HtmlValidator.Issue> validate(ToolRegistry tools, AgentListener listener, AgentWorkspace workspace) {
+    private List<HtmlValidator.Issue> validate(ToolRegistry tools, AgentListener listener, AgentWorkspace workspace,
+                                               AcceptanceSpec acceptance) {
         Map<String, Object> args = Map.of("path", MAIN_FILE);
         String result = tools.call("validate_html", args);
         listener.onToolCall("validate_html", args, result);
-        List<HtmlValidator.Issue> issues = HtmlValidator.validate(workspace.read(MAIN_FILE));
+        List<HtmlValidator.Issue> issues = new ArrayList<>(HtmlValidator.validate(workspace.read(MAIN_FILE)));
 
         // 执行级验证：把生成的页面真在浏览器里跑一遍，把"能预览"变成"跑得过验收"。
         // 运行时问题合并进同一份清单，复用已有的"回注 → 修复 → 重验"闭环；
@@ -321,7 +359,19 @@ public class AgentOrchestrator {
             if (report.skipped()) {
                 listener.onStatus("运行时验证不可用，已跳过，仅做静态校验");
             }
-            issues = runtimePolicy.merge(issues, report);
+            issues.addAll(runtimePolicy.merge(List.of(), report));
+        }
+
+        // C4 验收断言：从需求推导的"完成判据"，逐条客观核对；未通过的并入问题清单，
+        // 走同一条"回注 → 修复 → 重验"闭环——生成是否完成由断言说了算，而不是由模型自己说了算。
+        if (acceptance != null && !acceptance.isEmpty()) {
+            Map<String, Object> accArgs = Map.of("checks", acceptance.checks().size());
+            List<HtmlValidator.CheckResult> accResults =
+                    AcceptanceEvaluator.evaluate(workspace.read(MAIN_FILE), acceptance);
+            long passed = accResults.stream().filter(HtmlValidator.CheckResult::passed).count();
+            listener.onToolCall("verify_acceptance", accArgs,
+                    "验收断言 " + passed + "/" + accResults.size() + " 通过");
+            issues.addAll(AcceptanceEvaluator.failing(accResults));
         }
         return issues;
     }

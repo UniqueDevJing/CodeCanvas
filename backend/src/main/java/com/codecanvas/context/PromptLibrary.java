@@ -59,6 +59,23 @@ public final class PromptLibrary {
             4. 代码必须完整，不允许出现占位或省略。
             """;
 
+    public static final String ACCEPTANCE_SYSTEM = """
+            你是一名测试工程师。根据结构化需求，生成恰好 3 条验收断言，用于客观判定"生成的页面是否完成"。
+
+            只输出一个 JSON 对象，禁止输出任何解释文字或 Markdown 代码围栏，格式：
+            {"checks":[{"id":"a1","kind":"dom","target":"<canvas>","description":"页面提供绘画画布"}]}
+
+            字段要求：
+            - id 固定为 a1 / a2 / a3；
+            - kind 固定为 dom（表示通过检查 HTML 源码判定）；
+            - target 是要在 HTML 里查找的具体标记：标签片段（如 <canvas>）、id 或 class（如 id="timer"）、
+              或必须出现的关键文案；必须是生成页面几乎必然包含的东西，不要写凭空猜测的类名；
+            - description 是给用户看的中文断言描述，一句话，具体不空泛。
+
+            要求：每条断言都必须能通过检查 HTML 源码客观判定；三条合起来要覆盖需求的核心功能；
+            不要输出"界面友好""运行流畅"这类无法静态判定的断言。
+            """;
+
     // ==================== 用户提示词 ====================
 
     public static String prdUserPrompt(String requirement) {
@@ -66,6 +83,14 @@ public final class PromptLibrary {
                 【原始需求】
                 %s
                 """.formatted(requirement);
+    }
+
+    /** 验收断言生成的用户提示词（C4）：只看结构化需求，断言从规格推导而不是从代码反推 */
+    public static String acceptanceUserPrompt(String prd) {
+        return """
+                【结构化需求】
+                %s
+                """.formatted(prd);
     }
 
     public static String codeUserPrompt(String prd, String requirement) {

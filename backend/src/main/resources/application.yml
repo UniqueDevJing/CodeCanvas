@@ -32,6 +32,10 @@ codecanvas:
     click-main-button: ${CODECANVAS_RUNTIME_VERIFY_CLICK:true}
     # 单次验证整体超时（毫秒），超时则降级为仅静态校验
     timeout-ms: ${CODECANVAS_RUNTIME_VERIFY_TIMEOUT:15000}
+  acceptance:
+    # C4 验收断言：从 PRD 自动生成 3 条断言作为"生成完成"的客观判据，
+    # 未通过的断言并入自检修复闭环（回注 → 修复 → 重验）。
+    enabled: ${CODECANVAS_ACCEPTANCE_ENABLED:true}
   budget:
     # C2 预算感知调度：把 TokenMeter 的事后计量升级为准入控制。
     # 每任务可经 AgentRunRequest.budget 下发三元预算；此处为"启用时的默认预算"（全 0 = 不预设，按请求下发）。
