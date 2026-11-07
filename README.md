@@ -1,5 +1,51 @@
 # CodeCanvas · 一句话生成应用平台（自检修复闭环）
 
+![CI](https://github.com/UniqueDevJing/CodeCanvas/actions/workflows/ci.yml/badge.svg) ![tests](https://img.shields.io/badge/tests-green-brightgreen) ![license](https://img.shields.io/badge/license-MIT-blue)
+
+
+## 架构速览
+
+> 一句话生成可运行的前端应用（含配图），并自检自愈到可交付
+
+```mermaid
+flowchart LR
+    U["用户：一句话需求"] --> C["CLARIFY<br/>需求澄清"]
+    C --> P["PLAN<br/>任务规划"]
+    P --> G["GENERATE<br/>流式产出页面"]
+    G --> V["VALIDATE<br/>静态校验 + 运行时校验"]
+    V -->|不通过| H["HEAL<br/>定位并自愈修复"]
+    H --> V
+    V -->|通过| D["交付：预览 / 部署分享链接"]
+    G -.可选.-> I["视觉能力网关<br/>生成配图（带预算与降级）"]
+    I -.-> G
+```
+
+### 3 分钟跑起来
+
+```bash
+# 后端（需要模型 Key；未配置会自动降级为离线模板并在界面上明示）
+cd backend
+mvn -B -DskipTests package
+.\start-local.ps1                       # 或 java -jar target\codecanvas-backend.jar --codecanvas.llm.openai.api-key=...
+
+# 前端
+cd ../frontend
+npm ci && $env:VITE_API_KEY="dev-local-key"; npm run dev   # http://127.0.0.1:5173
+```
+
+### 这个项目里真正花力气解决的问题
+
+| 问题 | 做法 | 可验证的产出 |
+|---|---|---|
+| 生成结果"看起来成功其实是模板" | 离线兜底在流式里显式播报 | `LlmGateway.isOfflineFallback()` + 状态行提示 |
+| 模型名在账号上不存在 | 启动时探测模型目录，三态（可用/不可用/未知） | `/api/config/models` |
+| 并发生成丢版本 | 版本按 id 并集合并 + 同号不同内容全部保留 | 并发回归测试（8 线程不丢版本） |
+| 磁盘写入失败静默 | `save()` 显式抛错 | 保存失败回归测试 |
+| 用户关页面后还在烧 token | 阶段边界取消信号 | `isCancelled()` + 三个 catch 放行 |
+| 前端协议悄悄漂移 | SSE 事件名/阶段枚举/工具 schema 快照测试 | `SseContractSnapshotTest` |
+
+---
+
 > **用一句自然语言描述需求，AI 自动完成需求澄清 → 任务规划 → 代码生成 → 质量校验 → 自检修复，结果在沙箱里实时预览，可对话迭代、随时回滚，并一键发布成公开链接给别人用。**
 >
 > *One-sentence app generator with a self-healing loop — describe it, watch it build, ship it as a public link.*

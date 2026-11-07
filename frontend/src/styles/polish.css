@@ -1,0 +1,237 @@
+/* ==========================================================================
+   CodeCanvas 体验增强层（v2 polish）
+   --------------------------------------------------------------------------
+   目标：在不改动组件结构的前提下，把「能用」提升到「好用、有质感」：
+   - 统一动效节奏（入场 / 悬浮 / 按压 / 焦点），让操作有反馈而不是瞬间跳变；
+   - 生成中状态的呼吸感（用户知道系统在干活，而不是卡住）；
+   - 更克制的阴影与描边层次（信息密度高时仍然清晰）；
+   - 无障碍：可见焦点环、支持 prefers-reduced-motion。
+   放在 theme.css 之后引入，仅做增量覆盖，不改原有 token。
+   ========================================================================== */
+
+:root {
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --dur-fast: 120ms;
+  --dur-mid: 220ms;
+  --dur-slow: 380ms;
+
+  --elev-1: 0 1px 2px rgba(27, 26, 46, 0.06), 0 1px 3px rgba(27, 26, 46, 0.04);
+  --elev-2: 0 4px 12px rgba(27, 26, 46, 0.08), 0 2px 4px rgba(27, 26, 46, 0.04);
+  --elev-3: 0 12px 32px rgba(27, 26, 46, 0.12), 0 4px 8px rgba(27, 26, 46, 0.06);
+  --ring: 0 0 0 3px rgba(91, 70, 242, 0.22);
+}
+
+/* ---------- 全局节奏 ---------- */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--text-3);
+  background-clip: content-box;
+}
+
+:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+  border-radius: 8px;
+}
+
+/* ---------- 按钮与可点元素：悬浮有抬升、按压有回弹 ---------- */
+button,
+[role='button'],
+a {
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-mid) var(--ease-out),
+    background-color var(--dur-mid) var(--ease-out),
+    border-color var(--dur-mid) var(--ease-out),
+    color var(--dur-mid) var(--ease-out);
+}
+
+button:not(:disabled):hover {
+  transform: translateY(-1px);
+}
+
+button:not(:disabled):active {
+  transform: translateY(0) scale(0.985);
+  transition-duration: 60ms;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+/* ---------- 面板与卡片：层次更克制，悬浮时轻微浮起 ---------- */
+.card,
+.panel,
+[class*='card'],
+[class*='Panel'] {
+  transition:
+    box-shadow var(--dur-mid) var(--ease-out),
+    border-color var(--dur-mid) var(--ease-out),
+    transform var(--dur-mid) var(--ease-out);
+}
+
+.card:hover,
+[class*='card']:hover {
+  box-shadow: var(--elev-2);
+}
+
+/* ---------- 消息入场：从下方轻微上浮，避免整块突然出现 ---------- */
+@keyframes cc-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.995);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+[class*='message'],
+[class*='Message'],
+[class*='bubble'] {
+  animation: cc-enter var(--dur-slow) var(--ease-out) both;
+}
+
+/* ---------- 生成中：呼吸光，明确"系统在干活" ---------- */
+@keyframes cc-breathe {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+[class*='streaming'],
+[class*='Streaming'],
+[class*='generating'],
+[class*='Generating'],
+[class*='skeleton'],
+[class*='Skeleton'] {
+  animation: cc-breathe 1.6s ease-in-out infinite;
+}
+
+/* 进度条/骨架扫光 */
+@keyframes cc-shimmer {
+  0% {
+    background-position: -180% 0;
+  }
+  100% {
+    background-position: 180% 0;
+  }
+}
+
+[class*='skeleton'],
+[class*='Skeleton'],
+[class*='shimmer'] {
+  background-image: linear-gradient(
+    100deg,
+    transparent 20%,
+    rgba(91, 70, 242, 0.12) 42%,
+    rgba(91, 70, 242, 0.06) 58%,
+    transparent 80%
+  );
+  background-size: 200% 100%;
+  animation: cc-shimmer 1.4s linear infinite;
+}
+
+/* ---------- 主按钮：渐变 + 光晕，hover 时略微增强 ---------- */
+button[class*='primary'],
+button[class*='Primary'],
+.btn-primary {
+  background-image: var(--accent-grad);
+  color: #fff;
+  box-shadow: var(--elev-1);
+}
+
+button[class*='primary']:not(:disabled):hover,
+.btn-primary:not(:disabled):hover {
+  background-image: var(--accent-grad-hover);
+  box-shadow: var(--elev-2), 0 6px 20px rgba(91, 70, 242, 0.28);
+}
+
+/* ---------- 输入区：聚焦时温柔地"亮起来" ---------- */
+textarea,
+input[type='text'],
+input[type='search'] {
+  transition:
+    box-shadow var(--dur-mid) var(--ease-out),
+    border-color var(--dur-mid) var(--ease-out),
+    background-color var(--dur-mid) var(--ease-out);
+}
+
+textarea:focus,
+input[type='text']:focus,
+input[type='search']:focus {
+  border-color: var(--accent-border);
+  box-shadow: var(--ring);
+}
+
+/* ---------- 预览区：外框更像"设备"，内容切换有淡入 ---------- */
+[class*='preview'] iframe,
+[class*='Preview'] iframe {
+  transition: opacity var(--dur-mid) var(--ease-out);
+  border-radius: 10px;
+}
+
+@keyframes cc-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+[class*='preview'] iframe,
+[class*='Preview'] iframe {
+  animation: cc-fade var(--dur-slow) var(--ease-out) both;
+}
+
+/* ---------- 提示条 / Toast：从上方滑入 ---------- */
+@keyframes cc-drop {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+[class*='toast'],
+[class*='Toast'],
+[class*='banner'],
+[class*='Banner'] {
+  animation: cc-drop var(--dur-mid) var(--ease-out) both;
+}
+
+/* ---------- 无障碍：尊重"减少动态效果" ---------- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
