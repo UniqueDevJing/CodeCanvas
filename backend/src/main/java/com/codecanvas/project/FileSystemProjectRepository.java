@@ -78,7 +78,13 @@ public class FileSystemProjectRepository implements ProjectRepository {
 
     @Override
     public synchronized Project save(Project project) {
-        cache.put(project.id(), project);
+        // 并发写入合并（真实 bug 修复）：
+        // 生成是"读项目 → 追加一版 → 保存"的读改写，两个并发生成会各自基于旧快照写回，
+        // 结果后写者把先写者的版本整条覆盖掉（实测：两次并发只留下 1 个新版本）。
+        // 这里在锁内按版本 id 做并集，保证"谁生成过谁的版本一定在"。
+        Project merged = mergeVersions(cache.get(project.id()), project);
+        cache.put(merged.id(), merged);
+        project = merged;
         Path target = root.resolve(project.id() + ".json");
         try {
             Files.createDirectories(root);
@@ -103,4 +109,53 @@ public class FileSystemProjectRepository implements ProjectRepository {
         }
         return project;
     }
+    /**
+     * 把磁盘/缓存里已有的版本与新写的版本做并集。
+     *
+     * <p>顺序策略：老版本按原序在前，新版本按到达顺序追加——这样版本号 v1..vN 单调递增，
+     * 前端"版本历史"不会跳序。{@code currentVersionId} 采用本次写入的值（最后一次生成为准）。
+     */
+    private static Project mergeVersions(Project existing, Project incoming) {
+        if (existing == null || existing.versions() == null || existing.versions().isEmpty()) {
+            return incoming;
+        }
+        if (incoming.versions() == null || incoming.versions().isEmpty()) {
+            return incoming;
+        }
+        java.util.LinkedHashMap<String, com.codecanvas.project.VersionSnapshot> byId = new java.util.LinkedHashMap<>();
+        for (com.codecanvas.project.VersionSnapshot v : existing.versions()) {
+            byId.put(v.id(), v);
+        }
+        for (com.codecanvas.project.VersionSnapshot v : incoming.versions()) {
+            com.codecanvas.project.VersionSnapshot present = byId.get(v.id());
+            if (present == null) {
+                byId.put(v.id(), v);
+                continue;
+            }
+            // 关键：并发生成的版本号是按"当前版本数+1"算的，两个线程可能算出**同一个 vN**。
+            // 若内容不同就必须各自保留（实测：按 id 去重会把其中一次的产物整条吞掉），
+            // 所以这里给冲突的后者加内容指纹后缀，宁可版本号不连续也不能丢产物。
+            if (!java.util.Objects.equals(signature(present), signature(v))) {
+                byId.put(v.id() + "-" + signature(v), v);
+            }
+        }
+        java.util.List<com.codecanvas.project.VersionSnapshot> union = new java.util.ArrayList<>(byId.values());
+        if (union.size() == incoming.versions().size() && union.containsAll(incoming.versions())) {
+            return incoming;   // 无丢失，保持原对象
+        }
+        log.info("[project] 合并并发版本：disk={} incoming={} union={}",
+                existing.versions().size(), incoming.versions().size(), union.size());
+        return new Project(
+                incoming.id(), incoming.name(), incoming.prompt(), incoming.prd(),
+                incoming.createdAt(), incoming.updatedAt(), incoming.files(), union,
+                incoming.currentVersionId(), incoming.deployKey(), incoming.deployedAt());
+    }
+
+    /** 版本内容指纹：只用于并发同号时的去重判定，不参与展示。 */
+    private static String signature(com.codecanvas.project.VersionSnapshot v) {
+        String html = v.files() == null || v.files().isEmpty() ? "" : v.files().get(0).content();
+        return java.util.HexFormat.of().toHexDigits(
+                (v.requirement() + "|" + html).hashCode()).substring(0, 8);
+    }
+
 }
