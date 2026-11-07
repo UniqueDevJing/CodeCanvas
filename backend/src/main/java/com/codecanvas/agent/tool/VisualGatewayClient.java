@@ -44,7 +44,14 @@ public class VisualGatewayClient {
         this.requestTimeout = requestTimeout;
         this.totalBudget = totalBudget;
         this.pollIntervalMs = Math.max(10, pollIntervalMs);
-        this.http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
+        this.http = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(5))
+                // 强制 HTTP/1.1：Java 的 HttpClient 默认对 http:// 发起 h2c 升级
+                // （Connection: Upgrade + HTTP2-Settings），uvicorn 不做 h2c，
+                // 结果请求体被丢掉、网关回 422 "body missing"。
+                // 这是真机联调才暴露的问题——用 JDK HttpServer 的假网关测不出来。
+                .version(HttpClient.Version.HTTP_1_1)
+                .build();
     }
 
     /** 未配置网关时返回 false —— 调用方必须优雅降级，而不是把异常抛给用户。 */
@@ -90,7 +97,14 @@ public class VisualGatewayClient {
             return Result.degraded("prompt-rejected");
         }
         if (submitted.statusCode() != 202) {
-            return Result.degraded("submit-failed-" + submitted.statusCode());
+            // 4xx 多半是请求体不符合网关契约；把网关的校验信息带出来（截断），
+            // 否则只能看到一个 422，排查得靠猜。
+            String snippet = submitted.body() == null ? "" : submitted.body().strip();
+            if (snippet.length() > 180) {
+                snippet = snippet.substring(0, 180) + "…";
+            }
+            return Result.degraded("submit-failed-" + submitted.statusCode()
+                    + (snippet.isEmpty() ? "" : ":" + snippet));
         }
         String jobId = MAPPER.readTree(submitted.body()).path("job_id").asText("");
         if (jobId.isBlank()) {

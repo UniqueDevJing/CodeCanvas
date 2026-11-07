@@ -85,3 +85,40 @@ python -m pytest -q
 2. **真 ComfyUI 链路未在本机实测**（本机 Docker/ComfyUI 实例未起），只用 mock transport 验证了报文形状；
    真机跑通需要 SDXL 权重 + 8GB 显存，建议先跑 `mock` 打通调用链。
 3. **质量不可自动评测**：这里只管工程指标（成功率、P95、成本），图像质量靠人工抽检。
+## 真机联调记录（W1.5 · 2026-11-04）
+
+ComfyUI Desktop 实例 + 复用本机已有的 SD1.5 权重（免下载 4GB）：
+
+```yaml
+# <ComfyUI>/extra_model_paths.yaml
+a1111:
+  base_path: C:/Users/Dominion/stable-diffusion-webui/models
+  checkpoints: Stable-diffusion
+```
+
+```bash
+# 1) ComfyUI（Desktop 实例自带 venv：Python 3.13 + torch 2.12.1+cu130）
+python main.py --port 8188 --listen 127.0.0.1
+# 2) 网关接真后端
+GV_BACKEND=comfy COMFY_URL=http://127.0.0.1:8188 \
+COMFY_WORKFLOW=workflows/sd15_txt2img.json python -m uvicorn app.main:app --port 8089
+```
+
+实测（RTX 4060 Laptop 8GB，SD1.5，12 步，1024×1024）：
+
+| 指标 | 实测值 |
+|---|---|
+| 端到端 | 提交 → 出图 → 落盘 → 取回，**18.7s**（GPU 时间） |
+| 产物 | 1024×1024 PNG，**1.42 MB**，`asset_id` = 内容哈希 |
+| 成本 | `gpu_seconds=18.748`，`estimated_usd=0.001875`（按 0.0001 USD/s 计） |
+| 二次同请求 | 命中幂等缓存，**0 次 GPU 调用** |
+
+### 真机才暴露的一个 bug（已修）
+
+Java 的 `HttpClient` 对 `http://` 默认发起 **h2c 升级**（`Connection: Upgrade` + `HTTP2-Settings`），
+uvicorn 不做 h2c，结果**请求体被丢弃**，网关回 `422 body missing`。
+用 JDK `HttpServer` 搭的假网关测不出来（它忽略升级头），真机联调一眼看穿。
+修法：`HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1)`。
+
+同时给客户端补了一条：非 202 时把网关返回的校验片段带进降级原因（截断 180 字符），
+否则线上只能看到一个 422，排查靠猜。
