@@ -143,6 +143,8 @@ public class AgentOrchestrator {
         try {
             doRun(request, recorder, run);
             traceStore.save(recorder.finish(null));
+        } catch (CancelledException cancelled) {
+            throw cancelled;
         } catch (Exception e) {
             log.error("Agent 运行失败", e);
             String message = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
@@ -171,6 +173,7 @@ public class AgentOrchestrator {
         boolean rebuild = !firstTurn && !runtimeErrorRun && isRebuildIntent(requirement);
 
         // ============ 1. 需求澄清 ============
+        checkCancelled(listener);
         listener.onStage(AgentStage.CLARIFY, firstTurn
                 ? "正在理解你的需求"
                 : (rebuild ? "你要的是一个新应用，正在重新理解需求"
@@ -208,7 +211,9 @@ public class AgentOrchestrator {
                     listener.onStatus("已从需求推导出 " + acceptance.checks().size()
                             + " 条验收断言，生成后会逐条自动核对");
                 }
-            } catch (Exception e) {
+            } catch (CancelledException cancelled) {
+            throw cancelled;
+        } catch (Exception e) {
                 log.warn("验收断言生成失败（不阻断交付）: {}", e.getMessage());
             }
         }
@@ -219,6 +224,7 @@ public class AgentOrchestrator {
                 project.files().size());
         // 注意：不要往界面上抛"档位""打分明细"这类内部信息。
         // 模型路由的收益要看成本和质量数据，而不是让用户读一遍打分公式。
+        checkCancelled(listener);
         listener.onStage(AgentStage.PLAN, (firstTurn || rebuild)
                 ? "已经想清楚要做成什么样，开始写代码"
                 : "已确认要改哪些地方");
@@ -253,6 +259,7 @@ public class AgentOrchestrator {
             listener.onStatus("预算约束已生效：" + budgetDecision.reason());
         }
 
+        checkCancelled(listener);
         listener.onStage(AgentStage.GENERATE, purpose == LlmPurpose.FIX
                 ? "正在修复报错"
                 : "正在写页面代码");
@@ -334,7 +341,9 @@ public class AgentOrchestrator {
                                     visualClient.generate(prompt, aspect, slot, null);
                             imageBudget.settle(result.degraded() ? 0.0 : result.estimatedUsd());
                             return result;
-                        } catch (Exception e) {
+                        } catch (CancelledException cancelled) {
+            throw cancelled;
+        } catch (Exception e) {
                             imageBudget.settle(0.0);
                             return VisualGatewayClient.Result.degraded(
                                     "client-error:" + e.getClass().getSimpleName());
@@ -357,6 +366,7 @@ public class AgentOrchestrator {
         }
 
         // ============ 4. 质量校验 ============
+        checkCancelled(listener);
         listener.onStage(AgentStage.VALIDATE, "正在检查页面能不能正常打开");
         List<HtmlValidator.Issue> issues = validate(tools, listener, workspace, acceptance);
 
@@ -366,6 +376,7 @@ public class AgentOrchestrator {
         while (!issues.isEmpty() && healAttempts < allowedHeal) {
             healAttempts++;
             String errorText = HtmlValidator.describe(issues);
+            checkCancelled(listener);
             listener.onStage(AgentStage.HEAL, "发现一处问题，正在自动修复（第 " + healAttempts + " 次）");
             listener.onHeal(healAttempts, issues.get(0).message(), "已定位问题，正在做最小改动修复");
 
@@ -631,4 +642,19 @@ public class AgentOrchestrator {
     private String safe(String text) {
         return text == null ? "" : text.trim();
     }
+    /**
+     * 客户端已断开（公开给控制器识别）：属于正常终止，不该按错误上报。
+     */
+    public static final class CancelledException extends RuntimeException {
+        public CancelledException() {
+            super("client-cancelled");
+        }
+    }
+
+    private static void checkCancelled(AgentListener listener) {
+        if (listener.isCancelled()) {
+            throw new CancelledException();
+        }
+    }
+
 }

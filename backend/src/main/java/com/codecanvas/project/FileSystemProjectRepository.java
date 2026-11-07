@@ -105,7 +105,11 @@ public class FileSystemProjectRepository implements ProjectRepository {
                 Files.deleteIfExists(tmp);   // rename 成功后文件已不在，防御异常路径残留
             }
         } catch (IOException e) {
-            log.error("保存项目失败 {}：{}", project.id(), e.getMessage());
+            // 不能吞：磁盘满 / 权限变更 / 序列化失败都会走这里。
+            // 之前只打日志，调用方以为保存成功，用户看到"生成成功"但版本没落盘——
+            // 这是静默丢数据。现在显式失败，让上层能告诉用户"保存失败，请重试"。
+            log.error("保存项目失败 {}：{}", project.id(), e.getMessage(), e);
+            throw new IllegalStateException("保存项目失败: " + project.id(), e);
         }
         return project;
     }

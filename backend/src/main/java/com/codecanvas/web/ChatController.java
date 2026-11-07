@@ -1,6 +1,7 @@
 package com.codecanvas.web;
 
 import com.codecanvas.agent.AgentOrchestrator;
+import com.codecanvas.project.ProjectRunLock;
 import com.codecanvas.web.dto.ChatRequestDto;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.concurrent.ExecutorService;
@@ -9,6 +10,8 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 /**
@@ -27,17 +30,26 @@ public class ChatController {
     private final AgentOrchestrator orchestrator;
     private final ExecutorService agentExecutor;
     private final ObjectMapper objectMapper;
+    private final ProjectRunLock runLock;
 
     public ChatController(AgentOrchestrator orchestrator,
+                          ProjectRunLock runLock,
                           @Qualifier("agentExecutor") ExecutorService agentExecutor,
                           ObjectMapper objectMapper) {
         this.orchestrator = orchestrator;
+        this.runLock = runLock;
         this.agentExecutor = agentExecutor;
         this.objectMapper = objectMapper;
     }
 
     @PostMapping(value = "/stream", produces = "text/event-stream;charset=UTF-8")
     public SseEmitter stream(@RequestBody ChatRequestDto request) {
+        // 同一项目不允许并发生成：两个人格同时改写一个页面，结果不可解释也不可复现。
+        // 存储层已能保证不丢版本，但产品语义上应当直接拒绝（409），让用户等前一次结束。
+        if (!runLock.tryAcquire(request.projectId())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "该项目正在生成中，请等待当前生成结束（同一项目不支持并发生成）");
+        }
         SseEmitter emitter = new SseEmitter(TIMEOUT_MILLIS);
         SseAgentListener listener = new SseAgentListener(emitter, objectMapper);
 
@@ -48,10 +60,13 @@ public class ChatController {
         agentExecutor.submit(() -> {
             try {
                 orchestrator.run(request.toAgentRequest(), listener);
+            } catch (AgentOrchestrator.CancelledException cancelled) {
+                // 用户已关闭页面：安静收尾，不推错误事件、不打错误日志
             } catch (Exception e) {
                 listener.onError(e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
             } finally {
                 listener.done();
+                runLock.release(request.projectId());
             }
         });
         return emitter;

@@ -28,6 +28,8 @@ public class SseAgentListener implements AgentListener {
     private final SseEmitter emitter;
     private final ObjectMapper objectMapper;
     private final AtomicBoolean closed = new AtomicBoolean(false);
+    /** 连接已断开（取消信号）：编排层据此停止后续阶段 */
+    private final AtomicBoolean cancelled = new AtomicBoolean(false);
 
     public SseAgentListener(SseEmitter emitter, ObjectMapper objectMapper) {
         this.emitter = emitter;
@@ -116,7 +118,13 @@ public class SseAgentListener implements AgentListener {
     }
 
     /** 异常收尾。 */
+    @Override
+    public boolean isCancelled() {
+        return cancelled.get() || closed.get();
+    }
+
     public void abort(String message) {
+        cancelled.set(true);
         onError(message);
         done();
     }

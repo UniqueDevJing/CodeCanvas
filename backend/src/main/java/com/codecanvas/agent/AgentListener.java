@@ -37,6 +37,16 @@ public interface AgentListener {
 
     void onError(String message);
 
+    /**
+     * 本次运行是否已被取消（客户端断开 / 超时）。
+     *
+     * <p>默认 false，SSE 实现会在连接关闭时置位。编排层据此在阶段边界提前退出，
+     * 避免"用户已经关掉页面，后台还在烧 token"。
+     */
+    default boolean isCancelled() {
+        return false;
+    }
+
     /** 不做任何事的最小实现，便于测试与内部调用。 */
     static AgentListener noop() {
         return new AgentListener() {
