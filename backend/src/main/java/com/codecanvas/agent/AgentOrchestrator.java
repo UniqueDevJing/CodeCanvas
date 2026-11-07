@@ -2,6 +2,7 @@ package com.codecanvas.agent;
 
 import com.codecanvas.agent.tool.AgentWorkspace;
 import com.codecanvas.agent.tool.ToolRegistry;
+import com.codecanvas.agent.tool.VisualGatewayClient;
 import com.codecanvas.agent.trace.RunTrace;
 import com.codecanvas.agent.trace.RunTraceRecorder;
 import com.codecanvas.agent.trace.RunTraceStore;
@@ -73,6 +74,8 @@ public class AgentOrchestrator {
     private final RuntimeVerificationPolicy runtimePolicy;
     private final BudgetPolicy budgetPolicy;
     private final RunTraceStore traceStore;
+    /** 视觉能力网关客户端（W2.5）：为 null 或未启用时，配图槽位直接降级为占位图。 */
+    private final VisualGatewayClient visualClient;
 
     /** C4：验收断言生成开关（断言作为"生成完成"的客观判据，失败并入自检修复闭环） */
     @Value("${codecanvas.acceptance.enabled:true}")
@@ -95,6 +98,21 @@ public class AgentOrchestrator {
                              RuntimeVerificationPolicy runtimePolicy,
                              BudgetPolicy budgetPolicy,
                              RunTraceStore traceStore) {
+        this(projectService, gateway, contextAssembler, meter, sandbox, runtimeVerifier,
+                runtimePolicy, budgetPolicy, traceStore, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public AgentOrchestrator(ProjectService projectService,
+                             LlmGateway gateway,
+                             ContextAssembler contextAssembler,
+                             TokenMeter meter,
+                             IframeSandboxExecutor sandbox,
+                             RuntimeVerifier runtimeVerifier,
+                             RuntimeVerificationPolicy runtimePolicy,
+                             BudgetPolicy budgetPolicy,
+                             RunTraceStore traceStore,
+                             VisualGatewayClient visualClient) {
         this.projectService = projectService;
         this.gateway = gateway;
         this.contextAssembler = contextAssembler;
@@ -104,6 +122,7 @@ public class AgentOrchestrator {
         this.runtimePolicy = runtimePolicy;
         this.budgetPolicy = budgetPolicy;
         this.traceStore = traceStore;
+        this.visualClient = visualClient;
     }
 
     public void run(AgentRunRequest request, AgentListener listener) {
@@ -289,6 +308,35 @@ public class AgentOrchestrator {
             listener.onFile(MAIN_FILE, previous.isBlank() ? "create" : "update", byteLengthOf(html));
         } else {
             listener.onFile(MAIN_FILE, "update", byteLengthOf(workspace.read(MAIN_FILE)));
+        }
+
+        // ============ 3.5 配图绑定（W2.5） ============
+        // 模型只声明"这里需要一张图"（data-slot），是否真出图由运行时决定：
+        // 网关可用就换成产物 URL，不可用就换成渐变占位图——页面永远可渲染。
+        if (visualClient != null && visualClient.enabled()) {
+            ImageSlotBinder.Result bound = ImageSlotBinder.bind(workspace.read(MAIN_FILE),
+                    (slot, prompt, aspect) -> {
+                        try {
+                            return visualClient.generate(prompt, aspect, slot, null);
+                        } catch (Exception e) {
+                            return VisualGatewayClient.Result.degraded(
+                                    "client-error:" + e.getClass().getSimpleName());
+                        }
+                    });
+            if (bound.changed()) {
+                Map<String, Object> reWrite = new LinkedHashMap<>();
+                reWrite.put("path", MAIN_FILE);
+                reWrite.put("content", bound.html());
+                tools.call("write_file", reWrite);
+                listener.onFile(MAIN_FILE, "update", byteLengthOf(bound.html()));
+                for (ImageSlotBinder.Bound image : bound.bound()) {
+                    listener.onImage(image.assetId(), image.url(), image.slot(),
+                            image.width(), image.height(), image.costUsd());
+                }
+                long generated = bound.bound().stream().filter(b -> !b.degraded()).count();
+                listener.onStatus("配图 " + generated + "/" + bound.bound().size()
+                        + " 张（失败处已用渐变占位）");
+            }
         }
 
         // ============ 4. 质量校验 ============

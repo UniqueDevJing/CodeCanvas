@@ -72,6 +72,7 @@ public class SseAgentListener implements AgentListener {
      * width/height 做布局占位（避免 CLS 抖动），也要拿 role 决定插到哪里；
      * 而 file 事件描述的是"工作区里的文件"，语义不同。
      */
+    @Override
     public void onImage(String assetId, String url, String role, int width, int height, double costUsd) {
         send("image", map("assetId", assetId, "url", url, "role", role,
                 "width", width, "height", height, "costUsd", costUsd));

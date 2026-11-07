@@ -20,6 +20,13 @@ public interface AgentListener {
 
     void onFile(String path, String action, int bytes);
 
+    /**
+     * 图片产物（W2.5）。默认空实现：只有真正会出图的运行路径才需要关心它，
+     * 让已有实现与测试无需改动即可编译（新增能力不该强迫所有监听方适配）。
+     */
+    default void onImage(String assetId, String url, String role, int width, int height, double costUsd) {
+    }
+
     void onDelta(String path, String text);
 
     void onTokens(UsageView usage);

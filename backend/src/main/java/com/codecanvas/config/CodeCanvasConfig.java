@@ -31,6 +31,14 @@ public class CodeCanvasConfig {
      * 虚拟线程需要 JDK 21+，因此用反射探测而不是硬编码，JDK 17 环境自动退回有界线程池，
      * 升级 JDK 后不需要改代码就能切换到虚拟线程。
      */
+    @Bean
+    public com.codecanvas.agent.tool.VisualGatewayClient visualGatewayClient(
+            @org.springframework.beans.factory.annotation.Value("${codecanvas.visual-gateway.base-url:}") String baseUrl) {
+        // base-url 默认空 → enabled()=false → 配图槽位降级为渐变占位图，页面照常生成。
+        // 开启视觉能力：codecanvas.visual-gateway.base-url=http://127.0.0.1:8089
+        return new com.codecanvas.agent.tool.VisualGatewayClient(baseUrl);
+    }
+
     @Bean(name = "agentExecutor", destroyMethod = "shutdown")
     public ExecutorService agentExecutor() {
         ExecutorService virtual = tryVirtualThreadExecutor();
