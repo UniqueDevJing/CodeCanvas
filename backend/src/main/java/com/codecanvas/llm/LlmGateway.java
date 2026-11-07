@@ -50,6 +50,16 @@ public class LlmGateway {
     }
 
     /** 当前是否真的连着模型。 */
+    /**
+     * true = 这次会用离线模拟引擎（未配置密钥，或显式 mode=mock）。
+     *
+     * <p>必须让上层能把这件事**说出来**：静默兜底是用户体验灾难——
+     * 用户会以为"模型听懂了但做得烂"，实际是"根本没有模型在听"。
+     */
+    public boolean isOfflineFallback() {
+        return !usingRealModel();
+    }
+
     public boolean usingRealModel() {
         return !"mock".equalsIgnoreCase(properties.getMode()) && realProvider.available();
     }

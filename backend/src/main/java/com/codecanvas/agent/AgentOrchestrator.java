@@ -128,6 +128,12 @@ public class AgentOrchestrator {
     }
 
     public void run(AgentRunRequest request, AgentListener listener) {
+        if (gateway.isOfflineFallback()) {
+            listener.onStatus("⚠️ 当前离线演示模式（" + gateway.currentModeLabel()
+                    + "）：未检测到模型 API Key，生成的是内置模板页面，不会按你的需求定制。"
+                    + "配置 CODECANVAS_OPENAI_KEY 后重启即可使用真实模型。");
+        }
+
         // C3 执行轨迹：每次运行一个 runId，录制全部回调后落盘，供回放与 diff
         RunTraceRecorder recorder = new RunTraceRecorder(RunTrace.newId(), listener);
         recorder.begin(String.valueOf(request.trigger()),
