@@ -56,6 +56,11 @@ public class ChatController {
         emitter.onTimeout(() -> listener.abort("生成超时"));
         emitter.onError(error -> listener.abort("连接异常：" + error.getMessage()));
 
+        // 断连探测：Spring 不会稳定回调 onError/onCompletion，必须靠心跳写入失败来判定。
+        // 写失败 → listener.abort() → 编排层在下一个阶段边界停下（不再继续烧 token）。
+        SseHeartbeat heartbeat = new SseHeartbeat(emitter, () -> listener.abort("客户端已断开"));
+        heartbeat.start();
+
         // 放到专用线程池执行：一次生成要多次调用模型并长时间阻塞等待，不能占用 Web 请求线程
         agentExecutor.submit(() -> {
             try {
@@ -65,6 +70,7 @@ public class ChatController {
             } catch (Exception e) {
                 listener.onError(e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
             } finally {
+                heartbeat.stop();
                 listener.done();
                 runLock.release(request.projectId());
             }

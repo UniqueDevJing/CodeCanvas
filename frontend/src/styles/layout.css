@@ -1,0 +1,98 @@
+/* ==========================================================================
+   布局与响应式（v2 layout）
+   --------------------------------------------------------------------------
+   现有结构：.app > .app-main（含 .pane-splitter 分隔的可拖拽分栏）。
+   这里不改 DOM，只做三件事：
+   1) 宽屏下让主工作区更"满"（去掉两侧多余留白，聊天与预览都有更合理的呼吸）；
+   2) 窄屏/移动端把分栏改为上下堆叠，并让输入区吸附到底部；
+   3) 滚动容器各自独立，避免整页滚动导致"聊天记录把预览顶走"。
+   ========================================================================== */
+
+.app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh; /* 移动端地址栏收缩时不留白 */
+}
+
+.app-main {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0; /* 关键：否则子项无法独立滚动 */
+  gap: 12px;
+  padding: 12px clamp(12px, 2vw, 24px);
+  max-width: 1680px;
+  margin: 0 auto;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* 分栏容器：两栏各自滚动，互不影响 */
+.app-main > * {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.pane-splitter {
+  flex: 0 0 6px;
+  cursor: col-resize;
+  border-radius: 999px;
+  background: transparent;
+  transition: background-color var(--dur-mid) var(--ease-out);
+}
+
+.pane-splitter:hover,
+.pane-splitter:active {
+  background: var(--accent-soft-2);
+}
+
+/* 宽屏：聊天区略窄、预览区更宽（预览才是"交付物"，值得更多像素） */
+@media (min-width: 1280px) {
+  .app-main > :first-child {
+    flex: 0 1 42%;
+  }
+  .app-main > :last-child {
+    flex: 1 1 58%;
+  }
+}
+
+/* 平板：收窄间距，避免内容被挤成窄条 */
+@media (max-width: 1100px) {
+  .app-main {
+    gap: 8px;
+    padding: 8px;
+  }
+}
+
+/* 移动端：上下堆叠 + 隐藏拖拽条 + 输入区吸附 */
+@media (max-width: 860px) {
+  .app-main {
+    flex-direction: column;
+    overflow: auto;
+  }
+
+  .app-main > * {
+    overflow: visible;
+    width: 100%;
+  }
+
+  .pane-splitter {
+    display: none;
+  }
+
+  /* 预览区在移动端限高，保证聊天还能看到 */
+  .app-main > :last-child {
+    max-height: 60dvh;
+    overflow: auto;
+  }
+}
+
+/* 超短屏（横屏手机 / 小窗）：进一步压缩头图与留白 */
+@media (max-height: 640px) {
+  .app-main {
+    padding-top: 4px;
+    padding-bottom: 4px;
+  }
+}
