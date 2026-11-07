@@ -76,6 +76,8 @@ public class AgentOrchestrator {
     private final RunTraceStore traceStore;
     /** 视觉能力网关客户端（W2.5）：为 null 或未启用时，配图槽位直接降级为占位图。 */
     private final VisualGatewayClient visualClient;
+    /** 配图预算（W2.6）：每次运行的花费上限，超了就把剩余槽位降级为占位图。 */
+    private final ImageBudget imageBudget = ImageBudget.fromEnv();
 
     /** C4：验收断言生成开关（断言作为"生成完成"的客观判据，失败并入自检修复闭环） */
     @Value("${codecanvas.acceptance.enabled:true}")
@@ -316,9 +318,18 @@ public class AgentOrchestrator {
         if (visualClient != null && visualClient.enabled()) {
             ImageSlotBinder.Result bound = ImageSlotBinder.bind(workspace.read(MAIN_FILE),
                     (slot, prompt, aspect) -> {
+                        if (!imageBudget.tryReserve()) {
+                            // 预算优先于"多一张图"：宁可降级成占位图，也不让一次生成把额度烧穿
+                            listener.onStatus(imageBudget.summary() + "，剩余槽位降级为占位图");
+                            return VisualGatewayClient.Result.degraded("image-budget-exhausted");
+                        }
                         try {
-                            return visualClient.generate(prompt, aspect, slot, null);
+                            VisualGatewayClient.Result result =
+                                    visualClient.generate(prompt, aspect, slot, null);
+                            imageBudget.settle(result.degraded() ? 0.0 : result.estimatedUsd());
+                            return result;
                         } catch (Exception e) {
+                            imageBudget.settle(0.0);
                             return VisualGatewayClient.Result.degraded(
                                     "client-error:" + e.getClass().getSimpleName());
                         }
@@ -335,7 +346,7 @@ public class AgentOrchestrator {
                 }
                 long generated = bound.bound().stream().filter(b -> !b.degraded()).count();
                 listener.onStatus("配图 " + generated + "/" + bound.bound().size()
-                        + " 张（失败处已用渐变占位）");
+                        + " 张（失败处已用渐变占位）；" + imageBudget.summary());
             }
         }
 
