@@ -3,11 +3,14 @@ package com.codecanvas.web;
 import com.codecanvas.config.CodeCanvasConfig;
 import com.codecanvas.config.LlmProperties;
 import com.codecanvas.llm.LlmGateway;
+import com.codecanvas.llm.ModelAvailability;
+import com.codecanvas.llm.ModelAvailabilityProbe;
 import com.codecanvas.sandbox.DockerSandboxExecutor;
 import com.codecanvas.sandbox.IframeSandboxExecutor;
 import com.codecanvas.web.dto.ProjectDtos;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -26,17 +29,23 @@ public class ConfigController {
     private final IframeSandboxExecutor iframeSandbox;
     private final DockerSandboxExecutor dockerSandbox;
     private final String storageDir;
+    private final ModelAvailability modelAvailability;
+    private final ModelAvailabilityProbe modelProbe;
 
     public ConfigController(LlmProperties properties,
                             LlmGateway gateway,
                             IframeSandboxExecutor iframeSandbox,
                             DockerSandboxExecutor dockerSandbox,
-                            @Value("${codecanvas.storage.dir:./codecanvas-data}") String storageDir) {
+                            @Value("${codecanvas.storage.dir:./codecanvas-data}") String storageDir,
+                            ModelAvailability modelAvailability,
+                            ModelAvailabilityProbe modelProbe) {
         this.properties = properties;
         this.gateway = gateway;
         this.iframeSandbox = iframeSandbox;
         this.dockerSandbox = dockerSandbox;
         this.storageDir = storageDir;
+        this.modelAvailability = modelAvailability;
+        this.modelProbe = modelProbe;
     }
 
     @GetMapping
@@ -63,4 +72,38 @@ public class ConfigController {
                 storageDir,
                 "文件系统仓储（ProjectRepository 已抽象，可替换为 MySQL 实现）");
     }
+    /**
+     * 模型可用性（启动自检结果）。
+     *
+     * <p>为什么单独开一个端点而不塞进 /api/config：那个响应是前端依赖的固定结构（record），
+     * 加字段会牵动多方构造；诊断信息单独暴露，前端想显示再接。
+     *
+     * <p>也支持 {@code ?recheck=true} 现场重探一次（换 key/换模型后不必重启）。
+     */
+    @GetMapping("/models")
+    public java.util.Map<String, Object> models(@RequestParam(name = "recheck", defaultValue = "false") boolean recheck) {
+        if (recheck) {
+            modelProbe.probeAll();
+        }
+        var models = properties.getModels();
+        var configured = java.util.List.of(models.getFlagship(), models.getStandard(), models.getLight());
+        var items = modelAvailability.all(configured).stream()
+                .map(p -> java.util.Map.of(
+                        "model", p.model(),
+                        "status", p.status().name(),
+                        "detail", p.detail(),
+                        "checkedAt", p.checkedAt().toString()))
+                .toList();
+        var unavailable = modelAvailability.unavailableModels(configured);
+        return java.util.Map.of(
+                "provider", properties.getActiveProvider(),
+                "baseUrl", properties.getOpenai().getBaseUrl(),
+                "mode", gateway.usingRealModel() ? "REAL" : "MOCK",
+                "models", items,
+                "unavailable", unavailable,
+                "hint", unavailable.isEmpty()
+                        ? "未发现不可用模型"
+                        : "以下模型在账号上不存在，请改 CODECANVAS_MODEL_*：" + unavailable);
+    }
+
 }
