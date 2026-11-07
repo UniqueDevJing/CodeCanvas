@@ -144,7 +144,7 @@ class HtmlValidatorPlaceholderCommentTest {
         // stripComments 若在标签外剥离 //，会把 https://cdn... 之后的内容全部吃掉，
         // 导致后续标签闭合检查失准（这是实现该修复时自查发现的第二个风险点）。
         String html = VALID.replace("<h1>标题</h1>",
-                "<h1>标题</h1><img src=\"https://cdn.example.com/a.png\"><div>内容</div>");
+                "<h1>标题</h1><img src=\"https://cdn.example.com/a.png\" alt=\"示例图\"><div>内容</div>");
         assertTrue(validate(html).isEmpty(),
                 () -> "URL 不应影响校验，实际：" + HtmlValidator.describe(validate(html)));
     }

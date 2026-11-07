@@ -37,6 +37,29 @@ jobs:
       - name: Unit tests
         run: mvn -B test
 
+  visual-gateway:
+    name: Visual gateway · contract & semantics
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: visual-gateway
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: visual-gateway/requirements.txt
+
+      - name: Install deps
+        run: pip install -r requirements.txt
+
+      # W1：网关的契约(响应字段集)、语义(幂等/取消/超时/假成功)、安全(伪造类提示词拒绝)
+      # 全部是纯逻辑，不需要 GPU 也不需要真 ComfyUI；真后端只用 httpx.MockTransport 验报文形状。
+      - name: Tests
+        run: python -m pytest -q
+
   frontend:
     name: Frontend · build
     runs-on: ubuntu-latest

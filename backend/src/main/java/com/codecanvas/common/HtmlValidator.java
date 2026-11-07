@@ -42,6 +42,7 @@ public final class HtmlValidator {
     private static final Pattern STYLE_BLOCK = Pattern.compile("<style\\b[^>]*>[\\s\\S]*?</style>", Pattern.CASE_INSENSITIVE);
     private static final Pattern SCRIPT_INNER = Pattern.compile("<script\\b[^>]*>([\\s\\S]*?)</script>", Pattern.CASE_INSENSITIVE);
     private static final Pattern TAG = Pattern.compile("<(/?)([a-zA-Z][a-zA-Z0-9-]*)");
+    private static final Pattern IMG_TAG = Pattern.compile("<img\\b([^>]*)>", Pattern.CASE_INSENSITIVE);
 
     private static final List<String> PLACEHOLDERS = List.of("此处省略", "其他功能类似", "省略部分", "TODO:", "TODO：");
 
@@ -158,7 +159,8 @@ public final class HtmlValidator {
                 check("structure", "页面结构", issues, "HTML 骨架完整", "STRUCTURE"),
                 check("tags", "标签闭合", issues, "所有标签都正确闭合", "TAG"),
                 check("script", "脚本语法", issues, "脚本块括号配平", "SCRIPT"),
-                check("content", "内容完整", issues, "没有占位和残留标记", "EMPTY", "FENCE", "PLACEHOLDER"));
+                check("content", "内容完整", issues, "没有占位和残留标记", "EMPTY", "FENCE", "PLACEHOLDER"),
+                check("images", "图片可用", issues, "所有图片都有 alt 与 src", "IMAGE"));
     }
 
     private static CheckResult check(String id, String label, List<Issue> issues,
@@ -201,7 +203,44 @@ public final class HtmlValidator {
 
         issues.addAll(checkTagBalance(trimmed));
         issues.addAll(checkScriptBalance(trimmed));
+        issues.addAll(checkImages(trimmed));
         return issues;
+    }
+
+    /**
+     * 图片可用性检查（W2）：{@code <img>} 必须有非空 {@code alt} 与非空 {@code src}。
+     *
+     * <p>为什么把这两条当"校验"而不是"风格建议"：生成式页面最常见的翻车不是样式丑，
+     * 而是**图裂**（src 指向不存在的路径）与**无障碍缺失**（alt 空着）。让它们进入
+     * validate → 进入自愈回路（heal），比事后人工发现划算得多。
+     */
+    private static List<Issue> checkImages(String html) {
+        List<Issue> issues = new ArrayList<>();
+        Matcher matcher = IMG_TAG.matcher(html);
+        while (matcher.find()) {
+            String attrs = matcher.group(1);
+            if (!hasNonBlankAttr(attrs, "alt")) {
+                issues.add(new Issue("IMAGE", "<img> 缺少非空 alt 属性（无障碍与兜底文案）"));
+            }
+            if (!hasNonBlankAttr(attrs, "src")) {
+                issues.add(new Issue("IMAGE", "<img> 缺少非空 src 属性（会渲染成裂图）"));
+            }
+        }
+        return issues;
+    }
+
+    private static boolean hasNonBlankAttr(String attrs, String name) {
+        Matcher matcher = Pattern.compile(
+                "\\b" + Pattern.quote(name) + "\\s*=\\s*(\"([^\"]*)\"|'([^']*)'|([^\\s>]+))",
+                Pattern.CASE_INSENSITIVE).matcher(attrs);
+        while (matcher.find()) {
+            String value = matcher.group(2) != null ? matcher.group(2)
+                    : matcher.group(3) != null ? matcher.group(3) : matcher.group(4);
+            if (value != null && !value.isBlank()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** 标签闭合检查：忽略注释、script 与 style 的内部内容。 */

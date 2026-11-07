@@ -19,10 +19,23 @@ public class ToolRegistry {
     private final List<String> trace = new ArrayList<>();
 
     public ToolRegistry(AgentWorkspace workspace) {
+        this(workspace, null);
+    }
+
+    /**
+     * 带视觉能力的注册表。
+     *
+     * <p>网关未配置时不注册 {@code generateImage}：让模型**看不到**用不了的工具，
+     * 比"能调用但总是失败"更安全——后者会诱导模型反复重试、白烧预算。
+     */
+    public ToolRegistry(AgentWorkspace workspace, VisualGatewayClient visualClient) {
         register(new ListFilesTool(workspace));
         register(new ReadFileTool(workspace));
         register(new WriteFileTool(workspace));
         register(new ValidateHtmlTool(workspace));
+        if (visualClient != null && visualClient.enabled()) {
+            register(new GenerateImageTool(visualClient));
+        }
     }
 
     public void register(Tool tool) {

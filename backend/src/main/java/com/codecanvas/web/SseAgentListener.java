@@ -65,6 +65,18 @@ public class SseAgentListener implements AgentListener {
         send("file", map("path", path, "action", action, "bytes", bytes));
     }
 
+    /**
+     * 图片产物事件（W2）：前端按 {@code addEventListener('image')} 订阅。
+     *
+     * <p>为什么单独开一个事件而不是塞进 {@code file}：图片是**视觉资产**，前端要拿
+     * width/height 做布局占位（避免 CLS 抖动），也要拿 role 决定插到哪里；
+     * 而 file 事件描述的是"工作区里的文件"，语义不同。
+     */
+    public void onImage(String assetId, String url, String role, int width, int height, double costUsd) {
+        send("image", map("assetId", assetId, "url", url, "role", role,
+                "width", width, "height", height, "costUsd", costUsd));
+    }
+
     @Override
     public void onDelta(String path, String text) {
         send("delta", map("path", path, "text", text));

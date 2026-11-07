@@ -34,7 +34,7 @@ class SseContractSnapshotTest {
 
     /** 前端已订阅的全部事件名。新增事件必须同步前端，所以这里要显式加。 */
     private static final Set<String> EXPECTED_EVENTS = new TreeSet<>(List.of(
-            "session", "stage", "status", "tool", "file",
+            "session", "stage", "status", "tool", "file", "image",
             "delta", "tokens", "heal", "result", "error", "done"));
 
     @Test
