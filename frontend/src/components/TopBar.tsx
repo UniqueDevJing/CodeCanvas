@@ -42,6 +42,7 @@ export function TopBar({
       </div>
 
       <div className="topbar-right">
+        <ThemeToggle />
         <button type="button" className="btn" onClick={onOpenProjects} title="我做过的全部项目">
           <FolderIcon size={15} />
           我的项目
@@ -62,6 +63,47 @@ export function TopBar({
 interface ProjectNameFieldProps {
   name: string;
   onRename: (name: string) => void;
+}
+
+const SunIcon = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+    <circle cx="12" cy="12" r="4" />
+    <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+  </svg>
+);
+
+const MoonIcon = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z" />
+  </svg>
+);
+
+/** 暗/亮主题切换：写 data-theme + localStorage；初始值由 index.html 内联脚本提前设置避免闪烁 */
+function ThemeToggle() {
+  const [theme, setTheme] = useState<'light' | 'dark'>(() =>
+    document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light',
+  );
+  const toggle = () => {
+    const next = theme === 'dark' ? 'light' : 'dark';
+    document.documentElement.dataset.theme = next;
+    try {
+      localStorage.setItem('cc-theme', next);
+    } catch {
+      /* 隐私模式下写不进就算了 */
+    }
+    setTheme(next);
+  };
+  return (
+    <button
+      type="button"
+      className="btn btn-icon btn-ghost"
+      onClick={toggle}
+      title={theme === 'dark' ? '切换到亮色' : '切换到暗色'}
+      aria-label="切换主题"
+    >
+      {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
+    </button>
+  );
 }
 
 /** 就地编辑的项目名，回车/失焦提交，Esc 撤销 */

@@ -9,6 +9,14 @@
       content="CodeCanvas —— 一句话描述，自动生成可用的网页应用。自检修复闭环、上下文工程、模型分级路由。"
     />
     <meta name="theme-color" content="#5b46f2" />
+    <!-- 主题预设：在首帧渲染前恢复用户上次选择，避免暗色用户看到亮色闪烁 -->
+    <script>
+      try {
+        if (localStorage.getItem('cc-theme') === 'dark') {
+          document.documentElement.dataset.theme = 'dark';
+        }
+      } catch (e) {}
+    </script>
     <!-- 图标与页面内的品牌标识同一份设计：渐变方块 + C + 星光 -->
     <link
       rel="icon"

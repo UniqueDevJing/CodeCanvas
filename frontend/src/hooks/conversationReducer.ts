@@ -10,6 +10,7 @@ import type {
   StageEvent,
   StreamTrigger,
   TokensInfo,
+  ToolEvent,
   VersionInfo,
 } from '../types';
 
@@ -30,10 +31,14 @@ export interface AgentMessage {
   stageIndex: number;
   stageDetail: string;
   statusText: string;
+  /** 决策记录：预算约束、ReAct 模式切换、回退保版本等关键决策（statusText 只留最新，这里留全程） */
+  decisions: string[];
   files: FileEvent[];
   buffers: CodeBuffer[];
   activePath: string | null;
   heals: HealEvent[];
+  /** ReAct 分支的工具调用序列（code_gen / validate / web_search …），此前前端漏接，自检/自主选工具过程不可见 */
+  tools: ToolEvent[];
   tokens: TokensInfo | null;
   result: ResultEvent | null;
   error: string | null;
@@ -103,6 +108,7 @@ export type ConversationAction =
   | { type: 'stream/delta'; delta: DeltaEvent }
   | { type: 'stream/tokens'; tokens: TokensInfo }
   | { type: 'stream/heal'; heal: HealEvent }
+  | { type: 'stream/tool'; tool: ToolEvent }
   | { type: 'stream/result'; result: ResultEvent }
   | { type: 'stream/error'; message: string }
   | { type: 'stream/done' }
@@ -128,10 +134,12 @@ export function conversationReducer(
         stageIndex: 0,
         stageDetail: '',
         statusText: '正在建立连接…',
+        decisions: [],
         files: [],
         buffers: [],
         activePath: null,
         heals: [],
+        tools: [],
         tokens: null,
         result: null,
         error: null,
@@ -172,7 +180,12 @@ export function conversationReducer(
       }));
 
     case 'stream/status':
-      return patchActive(state, (m) => ({ ...m, statusText: action.text }));
+      return patchActive(state, (m) => ({
+        ...m,
+        statusText: action.text,
+        // 决策不覆盖、只追加：预算约束 / ReAct 切换 / 保版本回退这类关键决策要留全程
+        decisions: m.decisions.includes(action.text) ? m.decisions : [...m.decisions, action.text],
+      }));
 
     case 'stream/file':
       return patchActive(state, (m) => {
@@ -202,6 +215,9 @@ export function conversationReducer(
 
     case 'stream/heal':
       return patchActive(state, (m) => ({ ...m, heals: [...m.heals, action.heal] }));
+
+    case 'stream/tool':
+      return patchActive(state, (m) => ({ ...m, tools: [...m.tools, action.tool] }));
 
     case 'stream/result': {
       const result = action.result;

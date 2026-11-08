@@ -125,6 +125,9 @@ export default function App() {
       case 'heal':
         dispatch({ type: 'stream/heal', heal: event.data });
         break;
+      case 'tool':
+        dispatch({ type: 'stream/tool', tool: event.data });
+        break;
       case 'result': {
         // 后端 AgentResult 是平铺字段（healAttempts/recovered/usage），前端类型是嵌套
         // selfHeal/tokens。此前没做映射，"自动修复 N 次"恒为 0 —— 在入口归一化一次。

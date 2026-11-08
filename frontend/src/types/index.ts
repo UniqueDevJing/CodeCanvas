@@ -78,6 +78,17 @@ export interface DeltaEvent {
   text: string;
 }
 
+/** ReAct 分支的工具调用事件。后端 SseAgentListener 以 event:tool 下发，
+ *  此前前端联合类型漏掉了它，导致自检修复 / 自主选工具的过程完全隐形。 */
+export interface ToolEvent {
+  /** 工具名，如 code_gen / validate / web_search */
+  tool: string;
+  /** 入参（已是 JSON 文本或对象，按原样展示） */
+  args: unknown;
+  /** 工具返回；校验/检索类工具会带结果，纯动作类可能为空 */
+  result?: string;
+}
+
 export interface TokensInfo {
   promptTokens: number;
   completionTokens: number;
@@ -91,6 +102,18 @@ export interface TokensInfo {
   totalSavedPercent: number;
   tier: ModelTier;
   model: string;
+  /** 模型提供方（后端 UsageView 有下发，此前前端类型漏接） */
+  provider?: string;
+  /** 路由决策原因：为什么这一轮选这个档位 */
+  routeReason?: string;
+  /** 是否发生降级或退到离线引擎（如实展示，不粉饰） */
+  degraded?: boolean;
+  /** 本次注入上下文的 token（上下文工程压缩后） */
+  contextInjected?: number;
+  /** 不做上下文工程时的 token 估算 */
+  contextRaw?: number;
+  /** 上下文压缩比例（%） */
+  contextSavedPercent?: number;
 }
 
 /** 单个档位的调用分布 */
@@ -196,6 +219,7 @@ export type ParsedStreamEvent =
   | { event: 'tokens'; data: TokensInfo }
   | { event: 'heal'; data: HealEvent }
   | { event: 'result'; data: ResultEvent }
+  | { event: 'tool'; data: ToolEvent }
   | { event: 'error'; data: StreamErrorEvent }
   | { event: 'done'; data: DoneEvent };
 
