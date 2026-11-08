@@ -31,13 +31,17 @@ public class ChatController {
     private final ExecutorService agentExecutor;
     private final ObjectMapper objectMapper;
     private final ProjectRunLock runLock;
+    /** 每日生成额度（成本护栏） */
+    private final DailyQuota dailyQuota;
 
     public ChatController(AgentOrchestrator orchestrator,
                           ProjectRunLock runLock,
+                          DailyQuota dailyQuota,
                           @Qualifier("agentExecutor") ExecutorService agentExecutor,
                           ObjectMapper objectMapper) {
         this.orchestrator = orchestrator;
         this.runLock = runLock;
+        this.dailyQuota = dailyQuota;
         this.agentExecutor = agentExecutor;
         this.objectMapper = objectMapper;
     }
@@ -46,6 +50,12 @@ public class ChatController {
     public SseEmitter stream(@RequestBody ChatRequestDto request) {
         // 同一项目不允许并发生成：两个人格同时改写一个页面，结果不可解释也不可复现。
         // 存储层已能保证不丢版本，但产品语义上应当直接拒绝（409），让用户等前一次结束。
+        // 先扣额度再占锁：额度是成本护栏，必须在真正开始生成前生效。
+        // 顺序关键——先占锁再扣额度会让"被额度拒绝"的请求仍占着锁，后续请求全变 409。
+        if (!dailyQuota.tryAcquire()) {
+            throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,
+                    "今日生成额度已用尽（上限 " + dailyQuota.limit() + " 次/天），请明天再试或联系管理员");
+        }
         if (!runLock.tryAcquire(request.projectId())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "该项目正在生成中，请等待当前生成结束（同一项目不支持并发生成）");
@@ -73,6 +83,10 @@ public class ChatController {
                 heartbeat.stop();
                 listener.done();
                 runLock.release(request.projectId());
+                // 生成被取消（用户关页面）时退还额度：没有产出就不该占用当日次数
+                if (listener.isCancelled()) {
+                    dailyQuota.refund();
+                }
             }
         });
         return emitter;
