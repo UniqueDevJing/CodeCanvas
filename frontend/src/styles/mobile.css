@@ -1,0 +1,191 @@
+/* ==========================================================================
+   移动端预览高度优化（v3 mobile preview）
+   --------------------------------------------------------------------------
+   现状问题（真机窄屏实测）：
+   1) 预览区被聊天记录挤压，只能看到一条缝；
+   2) 键盘弹出/地址栏收缩时用 100vh 会留白或被裁掉；
+   3) 预览工具栏占掉本来就紧张的垂直空间；
+   4) 没有"全屏看效果"的入口，手机上没法认真验收生成结果。
+
+   策略（纯 CSS，不改组件结构）：
+   - 预览区固定为"底部卡片"：高度 clamp(220px, 46dvh, 520px)，吸底 + 圆角 + 阴影；
+   - 用 dvh 适配移动端地址栏收缩，并用 svh 兜底老浏览器；
+   - 工具栏降为 38px 且允许横向滚动，给画面让位；
+   - is-full 态直接铺满视口（沉浸式预览）；
+   - 安全区适配（iPhone 底部横条）。
+   ========================================================================== */
+
+@media (max-width: 860px) {
+  /* ---------- 整体：垂直排布，聊天占满剩余 ---------- */
+  .app-main {
+    flex-direction: column;
+    gap: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  .app-main > * {
+    min-height: 0;
+    width: 100%;
+  }
+
+  .pane-splitter {
+    display: none;
+  }
+
+  /* ---------- 预览：吸底卡片 ---------- */
+  .preview-pane {
+    flex: 0 0 auto !important;
+    /* dvh 随地址栏收缩，避免底部留白；不支持的浏览器回落到 vh */
+    height: 46vh;
+    height: clamp(220px, 46dvh, 520px);
+    max-height: 60vh;
+    max-height: 60dvh;
+    position: sticky;
+    bottom: 0;
+    z-index: 20;
+    border-radius: 16px 16px 0 0;
+    border-top: 1px solid var(--border-strong);
+    box-shadow: 0 -8px 28px rgba(27, 26, 46, 0.14);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    background: var(--panel);
+    overflow: hidden;
+  }
+
+  /* 顶部一条"抓手"，暗示可以拖/可切换 */
+  .preview-pane::before {
+    content: '';
+    position: absolute;
+    top: 6px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 40px;
+    height: 4px;
+    border-radius: 999px;
+    background: var(--border-strong);
+    opacity: 0.85;
+    z-index: 3;
+  }
+
+  /* 工具栏：压缩到 38px，按钮可横向滚动，不再换行占高 */
+  .preview-toolbar {
+    flex: 0 0 38px;
+    height: 38px;
+    padding: 0 10px;
+    padding-top: 12px;            /* 给抓手留位置 */
+    gap: 8px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    white-space: nowrap;
+    scrollbar-width: none;
+  }
+
+  .preview-toolbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .tab-group,
+  .device-group,
+  .toolbar-actions {
+    flex-wrap: nowrap;
+    flex-shrink: 0;
+  }
+
+  .tab-btn,
+  .device-btn {
+    height: 28px;
+    padding: 0 10px;
+    font-size: 12px;
+  }
+
+  .device-group {
+    max-width: 40vw;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  /* 画面本体：撑满剩余空间 */
+  .preview-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    align-items: stretch;
+    justify-content: stretch;
+  }
+
+  .preview-body iframe,
+  .preview-body > * {
+    width: 100%;
+    height: 100%;
+    border: 0;
+    display: block;
+  }
+
+  /* 空状态在窄屏不要占满，居中即可 */
+  .preview-empty-state {
+    padding: 16px;
+    gap: 8px;
+    font-size: 13px;
+    text-align: center;
+  }
+
+  .preview-empty-icon {
+    width: 40px;
+    height: 40px;
+  }
+
+  /* 版本面板在窄屏改为覆盖式，避免把画面压没 */
+  .version-scroll {
+    max-height: 40dvh;
+    overflow: auto;
+  }
+
+  /* ---------- 全屏预览：铺满视口，沉浸验收 ---------- */
+  .preview-pane.is-full {
+    position: fixed;
+    inset: 0;
+    height: 100vh;
+    height: 100dvh;
+    max-height: none;
+    border-radius: 0;
+    z-index: 999;
+  }
+
+  .preview-pane.is-full .preview-toolbar {
+    padding-top: 10px;
+  }
+
+  /* ---------- 聊天区：占满预览之上的空间，自己滚动 ---------- */
+  .app-main > :first-child {
+    flex: 1 1 auto;
+    overflow: auto;
+    overscroll-behavior: contain;
+    padding-bottom: 8px;
+  }
+}
+
+/* ---------- 横屏手机 / 超矮视口：预览再矮一点，保证能同时看到对话 ---------- */
+@media (max-width: 900px) and (max-height: 520px) {
+  .preview-pane {
+    height: 34vh;
+    height: clamp(160px, 34dvh, 320px);
+  }
+
+  .preview-toolbar {
+    flex-basis: 34px;
+    height: 34px;
+    padding-top: 8px;
+  }
+
+  .preview-pane::before {
+    display: none;
+  }
+}
+
+/* ---------- 平板（861px–1100px）：保持左右分栏，但放宽预览 ---------- */
+@media (min-width: 861px) and (max-width: 1100px) {
+  .preview-pane {
+    flex-basis: 52%;
+  }
+}
