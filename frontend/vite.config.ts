@@ -12,6 +12,10 @@ export default defineConfig(({ mode }) => {
     plugins: [react()],
     server: {
       port: 5173,
+      // 允许通过隧道域名（*.trycloudflare.com）访问：Vite 5 默认只接受本机 Host
+      // 否则公网访问会被 403 挡掉。
+      allowedHosts: true,
+
       proxy: {
         '/api': {
           target: 'http://localhost:8080',
