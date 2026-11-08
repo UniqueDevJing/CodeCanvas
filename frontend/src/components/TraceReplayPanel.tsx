@@ -13,6 +13,18 @@ import './TraceReplayPanel.css';
  * 回放在前端完成：每个事件都带 elapsedMs（相对运行起点的毫秒数），
  * 播放时按时间轴推进游标，"重新看一遍当时发生了什么"。
  */
+/** 可折叠的事件分组：把十几种事件类型归并为 6 个开关，方便只看关心的部分 */
+const FILTER_GROUPS: { key: string; label: string; types: string[] }[] = [
+  { key: 'stage', label: '阶段', types: ['stage', 'session'] },
+  { key: 'status', label: '状态', types: ['status'] },
+  { key: 'tool', label: '工具', types: ['tool'] },
+  { key: 'file', label: '文件', types: ['file', 'delta_summary'] },
+  { key: 'heal', label: '修复', types: ['heal'] },
+  { key: 'result', label: '结果/错误', types: ['result', 'error', 'tokens'] },
+];
+
+const SPEEDS = [1, 4, 16];
+
 export function TraceReplayPanel() {
   const [runs, setRuns] = useState<RunTraceSummary[] | null>(null);
   const [loadError, setLoadError] = useState(false);
@@ -21,6 +33,8 @@ export function TraceReplayPanel() {
   const [diff, setDiff] = useState<RunDiff | null>(null);
   const [playing, setPlaying] = useState(false);
   const [cursorMs, setCursorMs] = useState(0);
+  const [speed, setSpeed] = useState(4);
+  const [hiddenGroups, setHiddenGroups] = useState<Set<string>>(new Set());
   const timerRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -37,12 +51,12 @@ export function TraceReplayPanel() {
     setPlaying(false);
   }, []);
 
-  // 播放循环：按 4x 速度推进游标
+  // 播放循环：按当前速度推进游标（50ms 真实间隔 × speed 倍）
   useEffect(() => {
     if (!playing || !trace) return;
     timerRef.current = window.setInterval(() => {
       setCursorMs((ms) => {
-        const next = ms + 200; // 4x：每 50ms 真实间隔推进 200ms
+        const next = ms + 50 * speed;
         if (next >= trace.durationMs + 500) {
           stop();
           return trace.durationMs + 500;
@@ -56,7 +70,7 @@ export function TraceReplayPanel() {
         timerRef.current = null;
       }
     };
-  }, [playing, trace, stop]);
+  }, [playing, trace, stop, speed]);
 
   const toggleRun = useCallback(async (runId: string) => {
     stop();
@@ -88,8 +102,21 @@ export function TraceReplayPanel() {
 
   const visibleEvents = useMemo<RunEvent[]>(() => {
     if (!trace) return [];
-    return trace.events.filter((e) => e.elapsedMs <= cursorMs);
-  }, [trace, cursorMs]);
+    const hiddenTypes = new Set<string>();
+    for (const key of hiddenGroups) {
+      for (const t of FILTER_GROUPS.find((g) => g.key === key)?.types ?? []) hiddenTypes.add(t);
+    }
+    return trace.events.filter((e) => e.elapsedMs <= cursorMs && !hiddenTypes.has(e.type));
+  }, [trace, cursorMs, hiddenGroups]);
+
+  const toggleGroup = useCallback((key: string) => {
+    setHiddenGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
 
   if (loadError) {
     return <div className="trace-hint">没能读取执行轨迹，请确认后端已启动。</div>;
@@ -136,9 +163,34 @@ export function TraceReplayPanel() {
               {playing ? '暂停' : cursorMs > 0 ? '继续' : '回放'}
             </button>
             <button type="button" onClick={() => { stop(); setCursorMs(0); }}>重置</button>
+            <span className="trace-speed">
+              {SPEEDS.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  className={speed === s ? 'is-active' : ''}
+                  onClick={() => setSpeed(s)}
+                >
+                  {s}x
+                </button>
+              ))}
+            </span>
             <span className="trace-progress-label">
               {Math.min(cursorMs, trace.durationMs) / 1000}s / {(trace.durationMs / 1000).toFixed(1)}s
             </span>
+          </div>
+          <div className="trace-filters">
+            {FILTER_GROUPS.map((g) => (
+              <button
+                key={g.key}
+                type="button"
+                className={`trace-filter${hiddenGroups.has(g.key) ? ' is-off' : ''}`}
+                onClick={() => toggleGroup(g.key)}
+                title={hiddenGroups.has(g.key) ? '已隐藏，点击显示' : '点击隐藏'}
+              >
+                {g.label}
+              </button>
+            ))}
           </div>
           <input
             className="trace-scrub"
@@ -156,6 +208,9 @@ export function TraceReplayPanel() {
                 <span className="trace-event-detail">{e.detail}</span>
               </li>
             ))}
+            {visibleEvents.length === 0 && (
+              <li className="trace-hint">该时间点之前没有符合筛选条件的事件。</li>
+            )}
           </ol>
         </div>
       )}

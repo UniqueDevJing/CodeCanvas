@@ -13,6 +13,15 @@
 
 /* -------------------------------- 消息流 -------------------------------- */
 
+/* 外层容器定位锚点：回到底部按钮绝对定位在此 */
+.message-list-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .message-list {
   flex: 1;
   min-height: 0;
@@ -24,6 +33,30 @@
   scroll-behavior: smooth;
 }
 
+/* 回到底部：用户上滑阅读时出现在消息流右下角 */
+.jump-bottom {
+  position: absolute;
+  right: 14px;
+  bottom: 12px;
+  z-index: 3;
+  height: 30px;
+  padding: 0 13px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  background: var(--panel);
+  color: var(--text-2);
+  font-size: 12px;
+  box-shadow: var(--shadow-soft);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.jump-bottom:hover {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
 .msg-row {
   display: flex;
   animation: cc-fade-in 0.18s ease;
@@ -31,6 +64,41 @@
 
 .msg-row.is-user {
   justify-content: flex-end;
+}
+
+/* 用户气泡 + hover 复制按钮 */
+.user-bubble-wrap {
+  position: relative;
+  max-width: 86%;
+}
+
+.user-bubble-wrap .user-bubble {
+  max-width: 100%;
+}
+
+.user-bubble-wrap .bubble-copy {
+  position: absolute;
+  right: 6px;
+  top: -18px;
+  height: 20px;
+  padding: 0 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--panel);
+  color: var(--text-3);
+  font-size: 11px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  cursor: pointer;
+}
+
+.user-bubble-wrap:hover .bubble-copy {
+  opacity: 1;
+}
+
+.user-bubble-wrap .bubble-copy:hover {
+  border-color: var(--accent-border);
+  color: var(--accent-text);
 }
 
 .msg-row.is-agent {
@@ -539,6 +607,26 @@
 .agent-error svg {
   flex: 0 0 auto;
   margin-top: 2px;
+}
+
+/* 失败重试按钮 */
+.agent-retry {
+  flex: 0 0 auto;
+  margin-left: auto;
+  height: 22px;
+  padding: 0 10px;
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--danger);
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.agent-retry:hover {
+  background: var(--danger);
+  color: #fff;
 }
 
 .agent-stopped {

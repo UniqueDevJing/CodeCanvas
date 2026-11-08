@@ -8,10 +8,13 @@ import type { AgentMessage } from '../hooks/conversationReducer';
 
 interface AgentMessageCardProps {
   message: AgentMessage;
+  onRetry: (text: string) => void;
+  /** 最近一条用户消息文本（失败重试时重发）；为空则不显示重试按钮 */
+  retryText: string;
 }
 
 /** Agent 消息卡片：阶段进度 → 状态文案 → 文件变更 → 代码输出 → 结果摘要 */
-export function AgentMessageCard({ message }: AgentMessageCardProps) {
+export function AgentMessageCard({ message, onRetry, retryText }: AgentMessageCardProps) {
   const streaming = !message.finished && message.result === null && message.error === null;
 
   return (
@@ -56,6 +59,11 @@ export function AgentMessageCard({ message }: AgentMessageCardProps) {
         <div className="agent-error">
           <WarningIcon size={13} />
           <span>{message.error}</span>
+          {retryText && (
+            <button type="button" className="agent-retry" onClick={() => onRetry(retryText)}>
+              重试
+            </button>
+          )}
         </div>
       )}
 

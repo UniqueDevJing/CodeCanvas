@@ -197,3 +197,61 @@
   gap: 2px;
   color: var(--text-dim, #8a8f98);
 }
+
+/* ---------- 速度切换与事件过滤（UX 迭代） ---------- */
+.trace-speed {
+  display: inline-flex;
+  gap: 3px;
+  margin-left: 4px;
+}
+
+.trace-speed button {
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill, 999px);
+  background: var(--panel);
+  color: var(--text-3);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.trace-speed button:hover {
+  color: var(--text-2);
+}
+
+.trace-speed button.is-active {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+.trace-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 6px 0;
+}
+
+.trace-filter {
+  height: 22px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill, 999px);
+  background: var(--panel);
+  color: var(--text-2);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.trace-filter:hover {
+  border-color: var(--accent-border);
+}
+
+.trace-filter.is-off {
+  opacity: 0.45;
+  text-decoration: line-through;
+}

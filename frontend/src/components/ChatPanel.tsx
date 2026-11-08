@@ -28,7 +28,7 @@ export function ChatPanel({ messages, streaming, onSend, onStop }: ChatPanelProp
       {messages.length === 0 ? (
         <ChatEmptyState />
       ) : (
-        <MessageList messages={messages} />
+        <MessageList messages={messages} onSend={onSend} />
       )}
 
       <Composer
