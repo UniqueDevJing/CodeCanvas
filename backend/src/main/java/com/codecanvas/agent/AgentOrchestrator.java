@@ -167,8 +167,16 @@ public class AgentOrchestrator {
                 request.strategy() == null ? "PIPELINE" : request.strategy().name(),
                 request.message());
         TokenMeter.RunMeter run = meter.newRunMeter();
+        // P1-6：按运行维度统计语义缓存命中并如实留痕（同项目串行生成，差值法可靠）。
+        // 用 status 事件而非新增 SSE 事件名，前端「决策记录」与执行轨迹都能直接看到。
+        long cacheHitsBefore = gateway.cacheHits();
         try {
             doRun(request, recorder, run);
+            long cacheDelta = gateway.cacheHits() - cacheHitsBefore;
+            if (cacheDelta > 0) {
+                recorder.onStatus("语义缓存命中 " + cacheDelta
+                        + " 次：复用需求理解结果，本次未产生模型调用");
+            }
             traceStore.save(recorder.finish(null));
         } catch (CancelledException cancelled) {
             throw cancelled;

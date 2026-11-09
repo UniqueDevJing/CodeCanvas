@@ -1,9 +1,11 @@
 package com.codecanvas.llm;
 
 import com.codecanvas.config.LlmProperties;
+import com.codecanvas.llm.cache.SemanticCache;
 import com.codecanvas.llm.mock.MockLlmProvider;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -11,6 +13,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
@@ -31,22 +34,49 @@ public class LlmGateway {
 
     private static final Logger log = LoggerFactory.getLogger(LlmGateway.class);
 
+    /** 缓存命中时按块回放，避免一次性把整段文本塞给前端造成"卡顿式输出" */
+    private static final int CACHE_STREAM_CHUNK = 256;
+
     private final LlmProperties properties;
     private final ModelRouter router;
     private final LangChain4jProvider realProvider;
     private final MockLlmProvider mockProvider;
     private final TokenMeter meter;
+    /** P1-6 语义缓存；为 null 时（单测手工构造 / 显式关闭）完全退回改造前行为 */
+    private final SemanticCache cache;
 
+    /** 兼容构造：保留既有测试与降级路径 */
     public LlmGateway(LlmProperties properties,
                       ModelRouter router,
                       LangChain4jProvider realProvider,
                       MockLlmProvider mockProvider,
                       TokenMeter meter) {
+        this(properties, router, realProvider, mockProvider, meter, null);
+    }
+
+    @Autowired
+    public LlmGateway(LlmProperties properties,
+                      ModelRouter router,
+                      LangChain4jProvider realProvider,
+                      MockLlmProvider mockProvider,
+                      TokenMeter meter,
+                      SemanticCache cache) {
         this.properties = properties;
         this.router = router;
         this.realProvider = realProvider;
         this.mockProvider = mockProvider;
         this.meter = meter;
+        this.cache = cache;
+    }
+
+    /** 供编排层按运行维度统计命中次数（同项目串行生成，差值法可靠） */
+    public long cacheHits() {
+        return cache == null ? 0 : cache.hits();
+    }
+
+    /** 供平台自述端点读取缓存台账，不额外增加 ConfigController 的构造依赖 */
+    public SemanticCache cache() {
+        return cache;
     }
 
     /** 当前是否真的连着模型。 */
@@ -83,13 +113,33 @@ public class LlmGateway {
      */
     public CallResult call(LlmRequest request, RouteDecision route, TokenMeter.RunMeter runMeter) {
         LlmException lastError = null;
+        boolean eligible = cache != null && cache.eligible(request);
+        boolean missRecorded = false;
         for (ModelTier tier : fallbackChain(route.tier())) {
             LlmRequest attempt = withModel(request, router.modelOf(tier));
+            // P1-6：命中即完全跳过模型调用，也不计入 TokenMeter（省下的 token/成本由缓存台账单独记）
+            Optional<SemanticCache.Hit> cachedHit = eligible ? cache.lookup(attempt) : Optional.empty();
+            if (cachedHit.isPresent()) {
+                SemanticCache.Hit hit = cachedHit.get();
+                double saved = meter == null ? 0 : meter.estimateCost(tier,
+                        hit.response().inputTokens(), hit.response().outputTokens());
+                cache.recordHit(hit, tier, saved);
+                log.info("语义缓存命中({}/{}, 相似度={})，跳过一次模型调用",
+                        hit.matchType(), tier.label(), String.format("%.3f", hit.similarity()));
+                return new CallResult(hit.response(), tier, hit.response().providerId(), false, null);
+            }
+            if (eligible && !missRecorded) {
+                cache.recordMiss();
+                missRecorded = true;
+            }
             for (LlmProvider provider : providers()) {
                 try {
                     LlmResponse response = provider.chat(attempt);
                     if (response.text() == null || response.text().isBlank()) {
                         throw new LlmException("模型返回空内容");
+                    }
+                    if (eligible) {
+                        cache.store(attempt, response);
                     }
                     TokenMeter.Usage usage = runMeter.record(tier, response);
                     boolean degraded = tier != route.tier() || !provider.id().equals(properties.getActiveProvider());
@@ -114,8 +164,33 @@ public class LlmGateway {
                                     Consumer<String> onDelta,
                                     TokenMeter.RunMeter runMeter) {
         LlmException lastError = null;
+        boolean eligible = cache != null && cache.eligible(request);
+        boolean missRecorded = false;
         for (ModelTier tier : fallbackChain(route.tier())) {
             LlmRequest attempt = withModel(request, router.modelOf(tier));
+            // P1-6：命中时按块回放缓存文本，前端仍收到连续的 delta 流，观感与真实流式一致
+            Optional<SemanticCache.Hit> cachedHit = eligible ? cache.lookup(attempt) : Optional.empty();
+            if (cachedHit.isPresent()) {
+                SemanticCache.Hit hit = cachedHit.get();
+                double saved = meter == null ? 0 : meter.estimateCost(tier,
+                        hit.response().inputTokens(), hit.response().outputTokens());
+                cache.recordHit(hit, tier, saved);
+                String text = hit.response().text();
+                if (text != null) {
+                    for (int i = 0; i < text.length(); i += CACHE_STREAM_CHUNK) {
+                        onDelta.accept(text.substring(i,
+                                Math.min(text.length(), i + CACHE_STREAM_CHUNK)));
+                    }
+                }
+                log.info("流式语义缓存命中({}/{}, 相似度={})，按块回放 {} 字符",
+                        hit.matchType(), tier.label(), String.format("%.3f", hit.similarity()),
+                        text == null ? 0 : text.length());
+                return new CallResult(hit.response(), tier, hit.response().providerId(), false, null);
+            }
+            if (eligible && !missRecorded) {
+                cache.recordMiss();
+                missRecorded = true;
+            }
             for (LlmProvider provider : providers()) {
                 StringBuilder emitted = new StringBuilder();
                 AtomicBoolean anyDelta = new AtomicBoolean(false);
@@ -166,6 +241,9 @@ public class LlmGateway {
                     }
                     LlmResponse finalized = new LlmResponse(text, response.inputTokens(), response.outputTokens(),
                             response.model(), response.providerId(), response.estimated());
+                    if (eligible) {
+                        cache.store(attempt, finalized);
+                    }
                     TokenMeter.Usage usage = runMeter.record(tier, finalized);
                     boolean degraded = tier != route.tier()
                             || !provider.id().equals(properties.getActiveProvider());

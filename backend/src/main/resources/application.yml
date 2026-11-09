@@ -37,6 +37,19 @@ codecanvas:
       # 容器沙箱启用策略（默认关闭）。守护进程连通性仍会真实探测并如实展示，
       # 但 available() 在 prepare 真正实现之前恒为 false，不会被选成当前后端。
       enabled: ${CODECANVAS_SANDBOX_DOCKER_ENABLED:false}
+  # P1-6 语义缓存 Advisor：在模型网关层复用「同一需求的确定性理解结果」。
+  # 默认只缓存 PRD（需求澄清），刻意不缓存 CODE / MODIFY / FIX，原因见配置下方与
+  # SemanticCache 类注释；省下的 token 与成本由 /api/config/cache 如实上报。
+  semantic-cache:
+    enabled: ${CODECANVAS_SEMANTIC_CACHE_ENABLED:true}
+    # 归一化 prompt 的中文 2gram / 英文词元 TF 余弦阈值（词法-语义近似，非 embedding）
+    similarity-threshold: ${CODECANVAS_SEMANTIC_CACHE_THRESHOLD:0.78}
+    ttl-seconds: ${CODECANVAS_SEMANTIC_CACHE_TTL:3600}
+    max-entries: ${CODECANVAS_SEMANTIC_CACHE_MAX:256}
+    # ⚠️ 不要把 CODE 加进来：用户点「重新生成」时想拿新版本，缓存会让它变成复读机；
+    #    MODIFY / FIX 更危险——复用旧输出会把失败结果喂回自检修复闭环造成死循环。
+    purposes: ${CODECANVAS_SEMANTIC_CACHE_PURPOSES:PRD}
+    max-temperature: ${CODECANVAS_SEMANTIC_CACHE_MAX_TEMP:0.35}
   storage:
     # 项目与版本快照的落盘位置
     dir: ./codecanvas-data

@@ -79,6 +79,23 @@ public class ConfigController {
      * 加字段会牵动多方构造。这里把全部候选、优先级、是否可用、不可用原因摊开，
      * 便于确认"当前到底用了哪种隔离、为什么没用容器"。
      */
+    /**
+     * 语义缓存台账（P1-6）。
+     *
+     * <p>与 /api/config 分开的原因同 /sandbox：主配置响应是前端依赖的固定 record。
+     * 这里把命中数、节省的 token / 估算成本、相似度阈值以及**缓存边界**一起摊开，
+     * 便于核对"省了多少"是怎么算出来的，也便于确认哪些阶段故意不缓存。
+     */
+    @GetMapping("/cache")
+    public java.util.Map<String, Object> cache() {
+        var cache = gateway.cache();
+        if (cache == null) {
+            return java.util.Map.of("enabled", false,
+                    "hint", "语义缓存未装配（单测或降级路径），网关按改造前行为直连模型");
+        }
+        return cache.describe();
+    }
+
     @GetMapping("/sandbox")
     public java.util.Map<String, Object> sandbox() {
         return java.util.Map.of(
