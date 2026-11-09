@@ -1,8 +1,10 @@
 package com.codecanvas.agent;
 
 import com.codecanvas.agent.tool.AgentWorkspace;
+import com.codecanvas.agent.tool.Tool;
 import com.codecanvas.agent.tool.ToolRegistry;
 import com.codecanvas.agent.tool.VisualGatewayClient;
+import com.codecanvas.mcp.McpClientBridge;
 import com.codecanvas.agent.trace.RunTrace;
 import com.codecanvas.agent.trace.RunTraceRecorder;
 import com.codecanvas.agent.trace.RunTraceStore;
@@ -86,6 +88,13 @@ public class AgentOrchestrator {
     /** C-A：语义打分器（semantic-enabled=true 时注入；缺省 null → 语义断言诚实降级） */
     @Autowired(required = false)
     private SemanticScorer semanticScorer;
+
+    /**
+     * P0-2：外部 MCP Server 工具桥。只有 codecanvas.mcp.client.enabled=true 时才存在 Bean，
+     * 缺省为 null → 工具集与改造前完全一致，老行为零回归。
+     */
+    @Autowired(required = false)
+    private McpClientBridge mcpClientBridge;
 
     /** C5：ReAct 自主循环的步数上限（三重终止条件之一；另两个是预算耗尽与校验通过） */
     @Value("${codecanvas.react.max-steps:10}")
@@ -232,6 +241,16 @@ public class AgentOrchestrator {
         AgentWorkspace workspace = new AgentWorkspace();
         workspace.seed(project.files());
         ToolRegistry tools = new ToolRegistry(workspace);
+        // P0-2：外部 MCP Server 的工具按"运行"注入，与会话级内置工具并列。
+        // ReAct 的 describeTools() 会自动带上它们；PIPELINE 路径不受影响。
+        if (mcpClientBridge != null) {
+            List<Tool> remote = mcpClientBridge.externalTools();
+            remote.forEach(tools::register);
+            if (!remote.isEmpty()) {
+                listener.onStatus("已通过 MCP 接入 " + remote.size()
+                        + " 个外部工具，自主模式（ReAct）可直接调用");
+            }
+        }
         Map<String, Object> listArgs = Map.of();
         listener.onToolCall("list_files", listArgs, tools.call("list_files", listArgs));
 

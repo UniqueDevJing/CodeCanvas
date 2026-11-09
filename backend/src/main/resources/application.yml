@@ -12,11 +12,36 @@ spring:
     async:
       # 必须不小于 SSE 的超时时间，否则长生成会被容器提前掐断
       request-timeout: 1200000
+  # P0-2 MCP Server：把确定性工具按 Model Context Protocol 标准对外发布。
+  # 与 Spring AI 1.1.8 / Boot 3.5.16 对齐；2.0.x 需要 Boot 4，暂不采用。
+  ai:
+    mcp:
+      server:
+        enabled: ${CODECANVAS_MCP_ENABLED:true}
+        name: codecanvas-tools
+        version: 1.0.0
+        # STREAMABLE = 现代 Streamable HTTP（端点 /mcp），langchain4j-mcp 客户端可直接消费。
+        # starter 默认的 SSE 是旧协议，客户端侧没有对应 transport，所以这里必须显式切。
+        protocol: STREAMABLE
+        type: SYNC
+        capabilities:
+          tool: true
+          resource: false
+          prompt: false
+          completion: false
+        instructions: CodeCanvas 确定性工具集：HTML 质检与工具契约发现。全部不依赖大模型，可重复调用。
 
 codecanvas:
   storage:
     # 项目与版本快照的落盘位置
     dir: ./codecanvas-data
+  mcp:
+    client:
+      # P0-2 MCP 客户端：外部 Server 的工具会注册进本次运行的 ToolRegistry，
+      # 由 ReAct 自主循环按需调用。默认关闭；连接失败自动降级为空工具集，不影响主流程。
+      enabled: ${CODECANVAS_MCP_CLIENT_ENABLED:false}
+      url: ${CODECANVAS_MCP_CLIENT_URL:http://127.0.0.1:8080/mcp}
+      timeout-ms: ${CODECANVAS_MCP_CLIENT_TIMEOUT:10000}
   llm:
     # auto=有密钥用真实模型，否则退回离线引擎；real=强制真实；mock=强制离线
     mode: ${CODECANVAS_LLM_MODE:auto}
