@@ -13,7 +13,15 @@ public interface SandboxExecutor {
 
     String id();
 
-    /** 当前环境是否具备启用条件。 */
+    /**
+     * 隔离能力优先级，数字小的优先。选择器按它排序后取第一个可用后端；
+     * 这样新增更强的隔离实现时，业务层无需改动。
+     */
+    default int priority() {
+        return 100;
+    }
+
+    /** 当前环境是否具备<b>真正实现</b>并启用的条件。 */
     boolean available();
 
     /** 不可用时的原因说明，用于在界面上如实展示而不是假装可用。 */

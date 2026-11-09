@@ -22,12 +22,22 @@ public class RuntimeVerificationPolicy {
     private final boolean enabled;
     private final RuntimeSpec defaultSpec;
 
+    /**
+     * @param settleMs 浏览器里加载/点击后等待 DOM 稳定的毫秒数。
+     *
+     * <p><b>P1-4 修掉的性能 bug</b>：这里以前误把 {@code runtime-verify.timeout-ms}
+     * （15000，Java 侧杀进程的兜底上限）当成 settleMs 传给 Node 脚本，
+     * 于是每次运行时验证都在浏览器里白等 15 秒，全量测试被拖到 6 分钟。
+     * 两者是完全不同的量：timeout 管进程，settle 管渲染。现在拆成独立配置并夹到 2 秒以内，
+     * 即使将来又配错也不会把生成链路拖垮。
+     */
     public RuntimeVerificationPolicy(
             @Value("${codecanvas.runtime-verify.enabled:true}") boolean enabled,
             @Value("${codecanvas.runtime-verify.click-main-button:true}") boolean clickMainButton,
-            @Value("${codecanvas.runtime-verify.timeout-ms:15000}") int timeoutMs) {
+            @Value("${codecanvas.runtime-verify.settle-ms:300}") int settleMs) {
         this.enabled = enabled;
-        this.defaultSpec = new RuntimeSpec(clickMainButton, false, List.of(), List.of(), null, Math.max(0, timeoutMs));
+        this.defaultSpec = new RuntimeSpec(clickMainButton, false, List.of(), List.of(), null,
+                Math.max(0, Math.min(settleMs, 2000)));
     }
 
     public boolean enabled() {

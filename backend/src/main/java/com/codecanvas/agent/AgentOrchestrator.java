@@ -33,7 +33,7 @@ import com.codecanvas.project.Project;
 import com.codecanvas.project.ProjectFile;
 import com.codecanvas.project.ProjectService;
 import com.codecanvas.project.VersionSnapshot;
-import com.codecanvas.sandbox.IframeSandboxExecutor;
+import com.codecanvas.sandbox.SandboxExecutorResolver;
 import com.codecanvas.sandbox.SandboxedPreview;
 import com.codecanvas.verification.RuntimeReport;
 import com.codecanvas.verification.RuntimeVerificationPolicy;
@@ -78,7 +78,7 @@ public class AgentOrchestrator {
     private final LlmGateway gateway;
     private final ContextAssembler contextAssembler;
     private final TokenMeter meter;
-    private final IframeSandboxExecutor sandbox;
+    private final SandboxExecutorResolver sandbox;
     private final RuntimeVerifier runtimeVerifier;
     private final RuntimeVerificationPolicy runtimePolicy;
     private final BudgetPolicy budgetPolicy;
@@ -122,7 +122,7 @@ public class AgentOrchestrator {
                              LlmGateway gateway,
                              ContextAssembler contextAssembler,
                              TokenMeter meter,
-                             IframeSandboxExecutor sandbox,
+                             SandboxExecutorResolver sandbox,
                              RuntimeVerifier runtimeVerifier,
                              RuntimeVerificationPolicy runtimePolicy,
                              BudgetPolicy budgetPolicy,
@@ -136,7 +136,7 @@ public class AgentOrchestrator {
                              LlmGateway gateway,
                              ContextAssembler contextAssembler,
                              TokenMeter meter,
-                             IframeSandboxExecutor sandbox,
+                             SandboxExecutorResolver sandbox,
                              RuntimeVerifier runtimeVerifier,
                              RuntimeVerificationPolicy runtimePolicy,
                              BudgetPolicy budgetPolicy,

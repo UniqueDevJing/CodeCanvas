@@ -3,7 +3,7 @@ package com.codecanvas.web;
 import com.codecanvas.project.Project;
 import com.codecanvas.project.ProjectService;
 import com.codecanvas.project.VersionSnapshot;
-import com.codecanvas.sandbox.IframeSandboxExecutor;
+import com.codecanvas.sandbox.SandboxExecutorResolver;
 import com.codecanvas.sandbox.SandboxedPreview;
 import com.codecanvas.web.dto.ProjectDtos;
 import java.util.List;
@@ -21,9 +21,9 @@ import org.springframework.web.bind.annotation.RestController;
 public class ProjectController {
 
     private final ProjectService projectService;
-    private final IframeSandboxExecutor sandbox;
+    private final SandboxExecutorResolver sandbox;
 
-    public ProjectController(ProjectService projectService, IframeSandboxExecutor sandbox) {
+    public ProjectController(ProjectService projectService, SandboxExecutorResolver sandbox) {
         this.projectService = projectService;
         this.sandbox = sandbox;
     }

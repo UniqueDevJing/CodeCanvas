@@ -32,6 +32,11 @@ spring:
         instructions: CodeCanvas 确定性工具集：HTML 质检与工具契约发现。全部不依赖大模型，可重复调用。
 
 codecanvas:
+  sandbox:
+    docker:
+      # 容器沙箱启用策略（默认关闭）。守护进程连通性仍会真实探测并如实展示，
+      # 但 available() 在 prepare 真正实现之前恒为 false，不会被选成当前后端。
+      enabled: ${CODECANVAS_SANDBOX_DOCKER_ENABLED:false}
   storage:
     # 项目与版本快照的落盘位置
     dir: ./codecanvas-data
@@ -55,8 +60,11 @@ codecanvas:
     node-script: ${CODECANVAS_RUNTIME_VERIFY_SCRIPT:tools/runtime-verify.mjs}
     # 是否自动点一次主按钮并观察是否抛异常
     click-main-button: ${CODECANVAS_RUNTIME_VERIFY_CLICK:true}
-    # 单次验证整体超时（毫秒），超时则降级为仅静态校验
+    # 单次验证整体超时（毫秒），超时则降级为仅静态校验（Java 侧杀进程的兜底上限）
     timeout-ms: ${CODECANVAS_RUNTIME_VERIFY_TIMEOUT:15000}
+    # 浏览器内等待 DOM 稳定的时间（毫秒）。⚠️ 这不是 timeout-ms：
+    # 以前误把 15000 的进程超时当 settle 传给 Node 脚本，每次验证白等 15 秒。
+    settle-ms: ${CODECANVAS_RUNTIME_VERIFY_SETTLE:300}
   acceptance:
     # C4 验收断言：从 PRD 自动生成 3 条断言作为"生成完成"的客观判据，
     # 未通过的断言并入自检修复闭环（回注 → 修复 → 重验）。

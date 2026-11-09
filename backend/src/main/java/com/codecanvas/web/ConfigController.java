@@ -5,8 +5,7 @@ import com.codecanvas.config.LlmProperties;
 import com.codecanvas.llm.LlmGateway;
 import com.codecanvas.llm.ModelAvailability;
 import com.codecanvas.llm.ModelAvailabilityProbe;
-import com.codecanvas.sandbox.DockerSandboxExecutor;
-import com.codecanvas.sandbox.IframeSandboxExecutor;
+import com.codecanvas.sandbox.SandboxExecutorResolver;
 import com.codecanvas.web.dto.ProjectDtos;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -19,6 +18,9 @@ import org.springframework.web.bind.annotation.RestController;
  *
  * <p>把"当前用的是真实模型还是离线引擎""沙箱是哪种隔离级别""跑在虚拟线程还是平台线程池"
  * 如实告诉前端。产品界面敢把这些写出来，比含糊地说"由 AI 驱动"更可信。
+ *
+ * <p>P1-4：沙箱信息改由 {@link SandboxExecutorResolver} 提供——报告的是<b>实际选中的后端</b>，
+ * 而不是硬编码 iframe；未启用的容器后端也会带上真实的探测结论与原因。
  */
 @RestController
 @RequestMapping("/api/config")
@@ -26,23 +28,20 @@ public class ConfigController {
 
     private final LlmProperties properties;
     private final LlmGateway gateway;
-    private final IframeSandboxExecutor iframeSandbox;
-    private final DockerSandboxExecutor dockerSandbox;
+    private final SandboxExecutorResolver sandboxResolver;
     private final String storageDir;
     private final ModelAvailability modelAvailability;
     private final ModelAvailabilityProbe modelProbe;
 
     public ConfigController(LlmProperties properties,
                             LlmGateway gateway,
-                            IframeSandboxExecutor iframeSandbox,
-                            DockerSandboxExecutor dockerSandbox,
+                            SandboxExecutorResolver sandboxResolver,
                             @Value("${codecanvas.storage.dir:./codecanvas-data}") String storageDir,
                             ModelAvailability modelAvailability,
                             ModelAvailabilityProbe modelProbe) {
         this.properties = properties;
         this.gateway = gateway;
-        this.iframeSandbox = iframeSandbox;
-        this.dockerSandbox = dockerSandbox;
+        this.sandboxResolver = sandboxResolver;
         this.storageDir = storageDir;
         this.modelAvailability = modelAvailability;
         this.modelProbe = modelProbe;
@@ -60,11 +59,11 @@ public class ConfigController {
                         properties.getModels().getFlagship(),
                         properties.getModels().getStandard(),
                         properties.getModels().getLight()),
-                iframeSandbox.id(),
+                sandboxResolver.id(),
                 "预览运行在独立源的沙箱 iframe 中，无法访问平台页面数据。"
                         + "由于隔离源限制，页面内的 localStorage 会被浏览器拒绝，"
                         + "生成代码必须做降级处理——这正是自检闭环要覆盖的真实场景。",
-                dockerSandbox.unavailableReason(),
+                sandboxResolver.dockerReason(),
                 CodeCanvasConfig.virtualThreadSupported()
                         ? "虚拟线程（Java " + CodeCanvasConfig.runtimeJavaVersion() + "）"
                         : "有界平台线程池（Java " + CodeCanvasConfig.runtimeJavaVersion() + "，虚拟线程需 21+）",
@@ -72,6 +71,21 @@ public class ConfigController {
                 storageDir,
                 "文件系统仓储（ProjectRepository 已抽象，可替换为 MySQL 实现）");
     }
+
+    /**
+     * 沙箱后端清单（P1-4）。
+     *
+     * <p>单独开一个端点而不塞进 /api/config：那个响应是前端依赖的固定结构（record），
+     * 加字段会牵动多方构造。这里把全部候选、优先级、是否可用、不可用原因摊开，
+     * 便于确认"当前到底用了哪种隔离、为什么没用容器"。
+     */
+    @GetMapping("/sandbox")
+    public java.util.Map<String, Object> sandbox() {
+        return java.util.Map.of(
+                "active", sandboxResolver.id(),
+                "backends", sandboxResolver.backends());
+    }
+
     /**
      * 模型可用性（启动自检结果）。
      *

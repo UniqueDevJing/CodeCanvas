@@ -8,9 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,16 +16,21 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
- * 基于 Node + Playwright 的运行时验证器。
+ * 基于 Node + Playwright 的运行时验证器（P1-4 加固）。
  *
  * <p>实现策略：不把浏览器逻辑写进 Java（避免引入重量级 Java 绑定依赖），
  * 而是把生成的 HTML 交给 {@code tools/runtime-verify.mjs} 这个 Node 脚本，
  * 由它用 Playwright 真正加载页面、点按钮、断言、截图，再把结构化结果以 JSON 回传。
  * 后端只负责"写临时文件 → 起进程 → 读 JSON"，进程边界让浏览器崩溃也不会拖垮主服务。
  *
- * <p>优雅降级：无头浏览器或脚本缺失时 {@link #available()} 返回 false，
- * {@link #verify} 直接回一张 skipped 报告，不抛异常、不阻断交付——
- * 这保证"没装 Playwright 的环境"行为和改造前完全一致（只做静态校验）。
+ * <p><b>P1-4 修掉的诚实性问题</b>：改造前 {@link #available()} 只跑一次
+ * {@code node --version}。Node 装了但 Playwright / Chromium 没装时，它会返回 true，
+ * 于是配置界面显示"执行级验证已启用"，而每次验证其实都回一张 skipped 报告。
+ * 现在改为<b>真实能力探测</b>：拿一页最小 HTML 走完整条 Node → Playwright → Chromium 链路，
+ * 只有 {@code verified=true && skipped=false} 才认定可用，结果缓存、可 {@link #recheck()} 重探。
+ *
+ * <p>优雅降级：探测失败时 {@link #available()} 返回 false 并给出真实原因，
+ * {@link #verify} 直接回 skipped 报告，不抛异常、不阻断交付。
  */
 @Component
 public class NodePlaywrightRuntimeVerifier implements RuntimeVerifier {
@@ -36,6 +39,10 @@ public class NodePlaywrightRuntimeVerifier implements RuntimeVerifier {
 
     private static final String SCRIPT_NAME = "runtime-verify.mjs";
 
+    /** 探测页要尽量小：不点按钮、不断言、不等渲染，只验证浏览器链路能不能跑通。 */
+    private static final String PROBE_HTML =
+            "<!DOCTYPE html><html><body><p>codecanvas capability probe</p></body></html>";
+
     private final ObjectMapper mapper = new ObjectMapper();
 
     private final String nodeCommand;
@@ -43,7 +50,7 @@ public class NodePlaywrightRuntimeVerifier implements RuntimeVerifier {
     private final long timeoutMs;
 
     private volatile String resolvedScript;
-    private volatile Boolean nodePresent;
+    private volatile Capability capability;
 
     public NodePlaywrightRuntimeVerifier(
             @Value("${codecanvas.runtime-verify.node-command:node}") String nodeCommand,
@@ -80,10 +87,17 @@ public class NodePlaywrightRuntimeVerifier implements RuntimeVerifier {
         if (resolvedScript == null) {
             return false;
         }
-        if (nodePresent == null) {
-            nodePresent = checkNode();
+        Capability c = capability;
+        if (c == null) {
+            synchronized (this) {
+                c = capability;
+                if (c == null) {
+                    c = probe();
+                    capability = c;
+                }
+            }
         }
-        return nodePresent;
+        return c.ready();
     }
 
     @Override
@@ -91,10 +105,39 @@ public class NodePlaywrightRuntimeVerifier implements RuntimeVerifier {
         if (resolvedScript == null) {
             return "未找到运行时验证脚本 tools/" + SCRIPT_NAME;
         }
-        if (!available()) {
-            return "未检测到 Node 运行时，无法执行无头浏览器验证";
+        Capability c = capability;
+        if (c == null) {
+            available();
+            c = capability;
         }
-        return null;
+        return c == null || c.ready() ? null : c.reason();
+    }
+
+    /** 现场重探一次（装好 Chromium 后不必重启服务）。 */
+    public void recheck() {
+        synchronized (this) {
+            resolvedScript = resolveScript(configuredScript);
+            capability = null;
+        }
+        available();
+    }
+
+    /** 真实能力探测：Node 存在还不够，必须让浏览器把一页最小 HTML 真跑完。 */
+    private Capability probe() {
+        if (!checkNode()) {
+            return new Capability(false, "未检测到 Node 运行时，无法执行无头浏览器验证");
+        }
+        RuntimeReport report = execute(PROBE_HTML,
+                new RuntimeSpec(false, false, List.of(), List.of(), null, 0));
+        if (report.skipped()) {
+            String reason = report.issues().isEmpty() ? "环境不可用" : report.issues().get(0).message();
+            return new Capability(false, "Playwright / Chromium 不可用：" + reason);
+        }
+        if (!report.verified()) {
+            return new Capability(false, "无头浏览器未能完成一次验证");
+        }
+        log.info("执行级验证能力探测通过：Node + Playwright + Chromium 可用");
+        return new Capability(true, null);
     }
 
     private boolean checkNode() {
@@ -117,6 +160,11 @@ public class NodePlaywrightRuntimeVerifier implements RuntimeVerifier {
         if (!available()) {
             return RuntimeReport.skipped(unavailableReason() == null ? "环境不可用" : unavailableReason());
         }
+        return execute(html, spec);
+    }
+
+    /** 真正起进程执行验证；不检查 available()，避免与能力探测互相递归。 */
+    private RuntimeReport execute(String html, RuntimeSpec spec) {
         Path htmlFile = null;
         Path specFile = null;
         try {
@@ -194,5 +242,8 @@ public class NodePlaywrightRuntimeVerifier implements RuntimeVerifier {
                 // 临时文件清理失败不影响主流程
             }
         }
+    }
+
+    private record Capability(boolean ready, String reason) {
     }
 }

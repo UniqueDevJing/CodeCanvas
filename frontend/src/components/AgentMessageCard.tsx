@@ -71,14 +71,17 @@ function stringifyArgs(args: unknown): string {
 }
 
 /**
- * 护栏决策复用 tool 事件下发（不新增 SSE 事件名），但载荷是整份判定轨迹，
- * 直接铺 JSON 会把工具流淹掉——这里换成中文标签 + 人类可读的结论摘要。
+ * 护栏决策与执行级验证都复用 tool 事件下发（不新增 SSE 事件名），
+ * 但有的载荷是整份判定轨迹，直接铺 JSON 会把工具流淹掉——
+ * 这里换成中文标签 + 人类可读的结论摘要。
  */
-const GUARDRAIL_LABEL: Record<string, string> = {
+const AUDIT_TOOL_LABEL: Record<string, string> = {
   guardrail_input: '输入护栏',
   guardrail_output: '断言输出护栏',
   guardrail_artifact: '产物护栏',
   guardrail_structured_output: '结构化自校正',
+  verify_runtime: '执行级验证',
+  verify_acceptance: '验收断言核对',
 };
 
 /**
@@ -87,7 +90,7 @@ const GUARDRAIL_LABEL: Record<string, string> = {
  */
 function ToolStep({ tool, index }: { tool: ToolEvent; index: number }) {
   const hasResult = tool.result != null && String(tool.result).length > 0;
-  const guardrailLabel = GUARDRAIL_LABEL[tool.tool];
+  const guardrailLabel = AUDIT_TOOL_LABEL[tool.tool];
   const isGuardrail = guardrailLabel != null;
   return (
     <li className={`react-tool${isGuardrail ? ' react-tool-guardrail' : ''}`}>
