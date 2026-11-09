@@ -15,6 +15,11 @@ import com.codecanvas.acceptance.SemanticScorer;
 import com.codecanvas.common.CodeExtractor;
 import com.codecanvas.common.HtmlValidator;
 import com.codecanvas.common.TokenEstimator;
+import com.codecanvas.guardrail.GuardrailChain;
+import com.codecanvas.guardrail.GuardrailContext;
+import com.codecanvas.guardrail.GuardrailResult;
+import com.codecanvas.guardrail.StructuredOutputGuardrail;
+import java.util.function.Function;
 import com.codecanvas.context.ContextAssembler;
 import com.codecanvas.context.PromptLibrary;
 import com.codecanvas.llm.LlmGateway;
@@ -52,7 +57,8 @@ import org.springframework.stereotype.Service;
  * <p>两个关键设计：
  * <ol>
  *   <li><b>自检闭环</b>：生成结果必须先过静态校验才有资格交付；不通过就把具体问题回注给模型定点修复，
- *       最多 3 次。这样"生成的代码跑不起来"从用户体验问题变成一个可度量的恢复率指标。</li>
+ *       轮次由预算策略（codecanvas.budget.max-heal-attempts）统一控制。这样"生成的代码跑不起来"
+ *       从用户体验问题变成一个可度量的恢复率指标。</li>
  *   <li><b>上下文工程</b>：多轮迭代时不把历史对话和全部历史代码原样塞进提示词，而是注入
  *       结构化需求 + 历史变更摘要 + 相关文件。轮次越多，省得越多。</li>
  * </ol>
@@ -62,8 +68,9 @@ public class AgentOrchestrator {
 
     private static final Logger log = LoggerFactory.getLogger(AgentOrchestrator.class);
 
-    /** 自检修复的最大重试次数：再多就说明这个需求超出了当前模型的能力，继续重试只是烧钱。 */
-    private static final int MAX_HEAL_ATTEMPTS = 3;
+    // 自检修复轮次由 BudgetPolicy 的 codecanvas.budget.max-heal-attempts 统一控制。
+    // 原先这里有个 MAX_HEAL_ATTEMPTS 死常量，从未被任何代码引用，已删除——
+    // 两处"最大轮次"只会让配置和代码互相说谎。
 
     private static final String MAIN_FILE = "index.html";
 
@@ -95,6 +102,17 @@ public class AgentOrchestrator {
      */
     @Autowired(required = false)
     private McpClientBridge mcpClientBridge;
+
+    /**
+     * P0-3：两级拦截链 + 结构化输出自校正。
+     * 用 required=false 字段注入而不改构造函数签名：既不动已有测试的构造调用，
+     * 也让纯 new 出来的编排者保持改造前行为（为 null 时跳过护栏）。
+     */
+    @Autowired(required = false)
+    private GuardrailChain guardrailChain;
+
+    @Autowired(required = false)
+    private StructuredOutputGuardrail structuredOutputGuardrail;
 
     /** C5：ReAct 自主循环的步数上限（三重终止条件之一；另两个是预算耗尽与校验通过） */
     @Value("${codecanvas.react.max-steps:10}")
@@ -163,6 +181,28 @@ public class AgentOrchestrator {
     }
 
     private void doRun(AgentRunRequest request, AgentListener listener, TokenMeter.RunMeter run) {
+        // ============ P0-3 输入护栏 ============
+        // 只对用户发起的需求生效：RUNTIME_ERROR 是系统内部触发的修复运行，
+        // message 本来就是空的，不该被"空需求"规则误拦。
+        boolean userInitiated = request.trigger() != AgentRunRequest.Trigger.RUNTIME_ERROR;
+        if (guardrailChain != null && userInitiated) {
+            GuardrailChain.Verdict inVerdict = guardrailChain.evaluate(
+                    GuardrailResult.Phase.INPUT, GuardrailContext.input(safe(request.message())));
+            listener.onToolCall("guardrail_input", inVerdict.toAuditMap(), inVerdict.summary());
+            if (inVerdict.blocked()) {
+                String reason = inVerdict.results().stream()
+                        .filter(r -> r.outcome() == GuardrailResult.Outcome.REJECT)
+                        .map(GuardrailResult::reason)
+                        .findFirst()
+                        .orElse("输入未通过护栏");
+                listener.onError("输入未通过护栏：" + reason);
+                return;
+            }
+            if (inVerdict.degraded()) {
+                listener.onStatus("输入护栏有规则降级（已留痕），本次按原有流程继续");
+            }
+        }
+
         // ============ 会话 ============
         Project project;
         boolean created = false;
@@ -215,14 +255,44 @@ public class AgentOrchestrator {
                         LlmRequest.of(LlmPurpose.PRD, accRoute.model(), PromptLibrary.ACCEPTANCE_SYSTEM,
                                 PromptLibrary.acceptanceUserPrompt(prd)),
                         accRoute, run);
-                acceptance = AcceptanceSpec.parse(accCall.response().text());
+                String rawAcceptance = accCall.response().text();
+
+                // P0-3 输出护栏：解析 → 字段级校验 → 带违规原因的定向修复 → 复校 → 有界重试 → 诚实降级。
+                // 改造前这里只有 AcceptanceSpec.parse，模型漏字段会静默变成空断言集，
+                // 界面看起来一切正常，实际"生成完成"的客观判据被悄悄丢掉了。
+                if (structuredOutputGuardrail != null) {
+                    Function<String, String> repairer = prompt -> {
+                        RouteDecision rr = gateway.router().route(LlmPurpose.PRD, prompt, true, 0);
+                        return gateway.call(LlmRequest.of(LlmPurpose.PRD, rr.model(),
+                                        StructuredOutputGuardrail.REPAIR_SYSTEM, prompt),
+                                rr, run).response().text();
+                    };
+                    StructuredOutputGuardrail.Enforcement enforced =
+                            structuredOutputGuardrail.enforce(rawAcceptance, repairer, listener);
+                    acceptance = enforced.spec();
+                    if (enforced.downgraded()) {
+                        listener.onStatus("验收断言经 " + enforced.repairAttempts()
+                                + " 次定向修复仍未通过字段契约，已如实降级为不纳入判据");
+                    }
+                } else {
+                    acceptance = AcceptanceSpec.parse(rawAcceptance);
+                }
+
+                // 决策留痕复用 tool 事件：不新增 SSE 事件名，也自动进 RunTraceRecorder 的执行轨迹
+                if (guardrailChain != null) {
+                    GuardrailChain.Verdict outVerdict = guardrailChain.evaluate(
+                            GuardrailResult.Phase.OUTPUT,
+                            GuardrailContext.output(rawAcceptance, null, acceptance, 0));
+                    listener.onToolCall("guardrail_output", outVerdict.toAuditMap(), outVerdict.summary());
+                }
+
                 if (!acceptance.isEmpty()) {
                     listener.onStatus("已从需求推导出 " + acceptance.checks().size()
                             + " 条验收断言，生成后会逐条自动核对");
                 }
             } catch (CancelledException cancelled) {
-            throw cancelled;
-        } catch (Exception e) {
+                throw cancelled;
+            } catch (Exception e) {
                 log.warn("验收断言生成失败（不阻断交付）: {}", e.getMessage());
             }
         }
@@ -388,6 +458,16 @@ public class AgentOrchestrator {
         checkCancelled(listener);
         listener.onStage(AgentStage.VALIDATE, "正在检查页面能不能正常打开");
         List<HtmlValidator.Issue> issues = validate(tools, listener, workspace, acceptance);
+
+        // P0-3 产物侧输出护栏：与自检修复判据同源（HtmlValidator），
+        // 只在首次校验留痕一次，避免每轮修复都刷一条重复决策。
+        if (guardrailChain != null) {
+            GuardrailChain.Verdict artifactVerdict = guardrailChain.evaluate(
+                    GuardrailResult.Phase.OUTPUT,
+                    GuardrailContext.output(null, workspace.read(MAIN_FILE), acceptance, 0));
+            listener.onToolCall("guardrail_artifact", artifactVerdict.toAuditMap(),
+                    artifactVerdict.summary());
+        }
 
         // ============ 5. 自检修复 ============
         int healAttempts = 0;

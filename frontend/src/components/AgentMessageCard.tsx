@@ -71,18 +71,33 @@ function stringifyArgs(args: unknown): string {
 }
 
 /**
+ * 护栏决策复用 tool 事件下发（不新增 SSE 事件名），但载荷是整份判定轨迹，
+ * 直接铺 JSON 会把工具流淹掉——这里换成中文标签 + 人类可读的结论摘要。
+ */
+const GUARDRAIL_LABEL: Record<string, string> = {
+  guardrail_input: '输入护栏',
+  guardrail_output: '断言输出护栏',
+  guardrail_artifact: '产物护栏',
+  guardrail_structured_output: '结构化自校正',
+};
+
+/**
  * 单条 ReAct 工具调用：名称（可点击感）+ 入参 + 返回。
  * 这是「自主选工具 / 自检修复」过程的可见化，此前前端完全漏接。
  */
 function ToolStep({ tool, index }: { tool: ToolEvent; index: number }) {
   const hasResult = tool.result != null && String(tool.result).length > 0;
+  const guardrailLabel = GUARDRAIL_LABEL[tool.tool];
+  const isGuardrail = guardrailLabel != null;
   return (
-    <li className="react-tool">
+    <li className={`react-tool${isGuardrail ? ' react-tool-guardrail' : ''}`}>
       <span className="react-tool-idx">{index + 1}</span>
       <div className="react-tool-body">
         <div className="react-tool-line">
-          <span className="react-tool-name">{tool.tool}</span>
-          {tool.args != null && <span className="react-tool-args">{stringifyArgs(tool.args)}</span>}
+          <span className="react-tool-name">{guardrailLabel ?? tool.tool}</span>
+          {!isGuardrail && tool.args != null && (
+            <span className="react-tool-args">{stringifyArgs(tool.args)}</span>
+          )}
         </div>
         {hasResult && <div className="react-tool-result">{stringifyArgs(tool.result)}</div>}
       </div>

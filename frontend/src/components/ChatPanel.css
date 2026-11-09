@@ -816,6 +816,18 @@
   color: var(--accent-text);
 }
 
+/* 护栏决策：用淡色徽标与普通工具调用区分，避免整份判定 JSON 挤在工具流里 */
+.react-tool-guardrail .react-tool-name {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 5px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-family: inherit;
+  font-size: 11px;
+}
+
 .react-tool-args {
   font-family: var(--mono);
   font-size: 11px;
