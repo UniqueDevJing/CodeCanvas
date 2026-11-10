@@ -161,8 +161,9 @@ public class AgentOrchestrator {
         // ============ 4. 质量校验 + 5. 自检修复 ============
         checkCancelled(listener);
         listener.onStage(AgentStage.VALIDATE, "正在检查页面能不能正常打开");
-        java.util.List<HtmlValidator.Issue> issues = qualityGate.validate(gen.tools(), listener,
+        QualityGate.GateReport gate = qualityGate.validate(gen.tools(), listener,
                 workspace, acceptance);
+        java.util.List<HtmlValidator.Issue> issues = gate.issues();
         guardrails.auditArtifact(listener, workspace.read(GenerationFlow.MAIN_FILE), acceptance);
 
         int healAttempts = qualityGate.heal(listener, run, gen.genRoute(), gen.budget(),
@@ -174,7 +175,8 @@ public class AgentOrchestrator {
 
         // ============ 提交版本 + 沙箱预览 + 用量台账 ============
         DeliveryFlow.Delivery delivery = deliveryFlow.deliver(request, listener, run, project,
-                purpose, requirement, prd, gen, workspace, healAttempts, recovered, acceptance);
+                purpose, requirement, prd, gen, workspace, healAttempts, recovered, acceptance,
+                gate.runtimeStatus());
         listener.onResult(delivery.result());
     }
 

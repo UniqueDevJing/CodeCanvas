@@ -2,6 +2,7 @@ package com.codecanvas.agent;
 
 import com.codecanvas.acceptance.AcceptanceSpec;
 import com.codecanvas.agent.tool.AgentWorkspace;
+import com.codecanvas.common.HtmlValidator;
 import com.codecanvas.common.TokenEstimator;
 import com.codecanvas.context.ContextAssembler;
 import com.codecanvas.llm.LlmGateway;
@@ -44,7 +45,8 @@ public class DeliveryFlow {
     public Delivery deliver(AgentRunRequest request, AgentListener listener, TokenMeter.RunMeter run,
                             Project project, LlmPurpose purpose, String requirement, String prd,
                             GenerationFlow.Outcome gen, AgentWorkspace workspace,
-                            int healAttempts, boolean recovered, AcceptanceSpec acceptance) {
+                            int healAttempts, boolean recovered, AcceptanceSpec acceptance,
+                            com.codecanvas.verification.VerificationStatus runtimeStatus) {
         String summary = PromptSupport.summarize(purpose, requirement, prd, recovered, healAttempts, request);
         TokenMeter.Snapshot snapshot = run.snapshot();
 
@@ -73,6 +75,16 @@ public class DeliveryFlow {
                 contextReport.injectedTokens(), contextReport.rawTokens());
 
         listener.onTokens(usageView);
+
+        // C5 强制门禁：质检报告里如实呈现运行时验证状态，未验证绝不伪装成通过
+        List<HtmlValidator.CheckResult> quality = new java.util.ArrayList<>(
+                qualityGate.qualityReport(workspace.mainContent(), acceptance));
+        if (runtimeStatus != null && runtimeStatus.attempted() && !runtimeStatus.isVerified()) {
+            quality.add(new HtmlValidator.CheckResult("runtime-verification",
+                    "运行时验证（浏览器实跑）", false, runtimeStatus.display()));
+            listener.onStatus("本版本未经浏览器实跑验证，已如实标注 " + runtimeStatus.state());
+        }
+
         AgentResult result = new AgentResult(
                 project.id(),
                 project.currentVersionId(),
@@ -87,9 +99,8 @@ public class DeliveryFlow {
                 gen.generateCall().response().model(),
                 gen.generateCall().tier().label(),
                 gen.tools().trace(),
-                // 质检报告按最终交付的内容生成，而不是按中间某次尝试；
-                // C4 验收断言的核对结果一并进入报告（前端质检面板直接渲染）
-                qualityGate.qualityReport(workspace.mainContent(), acceptance),
+                runtimeStatus,
+                List.copyOf(quality),
                 usageView);
         return new Delivery(project, result);
     }

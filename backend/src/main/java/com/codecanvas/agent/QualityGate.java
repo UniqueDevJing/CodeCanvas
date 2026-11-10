@@ -51,6 +51,11 @@ public class QualityGate {
         this.runtimePolicy = runtimePolicy;
     }
 
+    /** 门禁结果：待修复问题 + 运行时验证三态结论（C5）。 */
+    public record GateReport(List<HtmlValidator.Issue> issues,
+                             com.codecanvas.verification.VerificationStatus runtimeStatus) {
+    }
+
     /** 质检报告 = 固定四维检查 + 验收断言逐条结果（C4/C-A） */
     public List<HtmlValidator.CheckResult> qualityReport(String html, AcceptanceSpec acceptance) {
         List<HtmlValidator.CheckResult> report = new ArrayList<>(HtmlValidator.report(html));
@@ -58,25 +63,30 @@ public class QualityGate {
         return List.copyOf(report);
     }
 
-    /** 静态校验 + 运行时验证 + 验收断言核对，产出待修复问题清单 */
-    public List<HtmlValidator.Issue> validate(ToolRegistry tools, AgentListener listener,
-                                              AgentWorkspace workspace, AcceptanceSpec acceptance) {
+    /** 静态校验 + 运行时验证 + 验收断言核对，产出待修复问题清单与验证状态 */
+    public GateReport validate(ToolRegistry tools, AgentListener listener,
+                               AgentWorkspace workspace, AcceptanceSpec acceptance) {
         Map<String, Object> args = Map.of("path", GenerationFlow.MAIN_FILE);
         String result = tools.call("validate_html", args);
         listener.onToolCall("validate_html", args, result);
         List<HtmlValidator.Issue> issues =
                 new ArrayList<>(HtmlValidator.validate(workspace.read(GenerationFlow.MAIN_FILE)));
 
-        // 执行级验证：把生成的页面真在浏览器里跑一遍，把「能预览」变成「跑得过验收」。
-        // 环境无浏览器时 verify 回 skipped 报告，不阻断交付，行为与改造前一致（仅静态校验）。
+        // 执行级验证（C5 强制门禁）：开着就区分 VERIFIED / NOT_VERIFIED，
+        // 浏览器装不上也绝不把这次运行标成"已验证"。
+        com.codecanvas.verification.VerificationStatus runtimeStatus =
+                com.codecanvas.verification.VerificationStatus.skipped(
+                        "codecanvas.runtime-verify.enabled=false");
         if (runtimePolicy.enabled()) {
             // C3：多文件项目先内联相对引用再跑浏览器，运行时验证反映的是真实可运行状态
             String runtimeHtml = com.codecanvas.common.PreviewAssembler.assemble(
                     workspace.mainPath(), workspace.snapshot());
             RuntimeReport report = runtimeVerifier.verify(runtimeHtml, runtimePolicy.defaultSpec());
             listener.onToolCall("verify_runtime", Map.of("path", GenerationFlow.MAIN_FILE), report.summary());
+            runtimeStatus = com.codecanvas.verification.VerificationStatus.from(report, true);
             if (report.skipped()) {
-                listener.onStatus("运行时验证不可用，已跳过，仅做静态校验");
+                listener.onStatus("运行时验证未完成（" + runtimeStatus.reason()
+                        + "），本版本将如实标注为未验证");
             }
             issues.addAll(runtimePolicy.merge(List.of(), report));
         }
@@ -92,7 +102,7 @@ public class QualityGate {
                     "验收断言 " + passed + "/" + accResults.size() + " 通过");
             issues.addAll(AcceptanceEvaluator.failing(accResults));
         }
-        return issues;
+        return new GateReport(issues, runtimeStatus);
     }
 
     /**
@@ -127,7 +137,7 @@ public class QualityGate {
             workspace.write(GenerationFlow.MAIN_FILE, fixed);
             listener.onFile(GenerationFlow.MAIN_FILE, "update", GenerationFlow.byteLengthOf(fixed));
             issues.clear();
-            issues.addAll(validate(tools, listener, workspace, acceptance));
+            issues.addAll(validate(tools, listener, workspace, acceptance).issues());
             if (budgetPolicy.exceeded(budget, run.snapshot())) {
                 listener.onStatus("已达成本/Token 预算上限，停止自检修复（已交付当前最优版本）");
                 break;
