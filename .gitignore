@@ -28,3 +28,7 @@ deploy/.deploy-credentials
 
 # 调试产物：导出生成内容做校验器复跑，不入库
 backend/tmp-gen/
+
+# Python 生成缓存（C9 清理）
+__pycache__/
+*.pyc

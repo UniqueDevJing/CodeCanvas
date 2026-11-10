@@ -33,6 +33,9 @@ cd ../frontend
 npm ci && $env:VITE_API_KEY="dev-local-key"; npm run dev   # http://127.0.0.1:5173
 ```
 
+> **鉴权**：配置 `codecanvas.auth.users`（`用户名:密码:每日次数` 逗号分隔）后走会话登录；
+> 未配置时回退共享口令（前端 `VITE_API_KEY`），共享口令不再是唯一保护，两者均 fail-closed。
+
 ### 这个项目里真正花力气解决的问题
 
 | 问题 | 做法 | 可验证的产出 |
@@ -112,6 +115,13 @@ CodeCanvas 用一套确定性校验 + 自检修复闭环把这个问题兜住，
 | 上下文工程 | 结构化 PRD + 相关文件选择 + token 预算裁剪 | 连续 8 轮迭代，第 8 轮上下文注入节省 **+85%**，成本不随对话轮数上涨 |
 | 模型分级路由 | 按复杂度映射旗舰 / 标准 / 轻量三档，决策带可读理由 | 选型修正后单次任务成本 **降低 75%**（显式基准，可复算） |
 | 沙箱隔离 | 预览 iframe `sandbox="allow-scripts"` 不含 `allow-same-origin` + CSP `connect-src 'none'` | 防生成应用刷光平台模型额度 |
+| 多文件项目生成 | 规划优先：先出 ≤8 文件的 ProjectPlan，逐文件流式生成（入口最后），修改走 FileChangeSet 精确变更集，manifest 随版本落盘 | 支持 HTML 与 React 两种技术栈；规划/变更解析失败自动降级单文件流水线，不失败 |
+| 受限构建沙箱 | 每任务独立临时目录（路径逃逸拒绝）+ 依赖白名单（拒绝 file:/git:/http 直链逃逸）+ 敏感环境变量剥离 + 超时强杀（异步读流不阻塞 waitFor） | npm install/build 分阶段硬超时，输出限量；隔离级别诚实声明不做伪装 |
+| 运行时验证门禁 | 浏览器实跑结论三态：VERIFIED / NOT_VERIFIED / SKIPPED，写入质检报告 | 未验证**不伪装成通过**——报告如实展示"运行时验证未执行"及原因 |
+| 任务生命周期持久化 | 运行即落 RUNNING 快照，取消/失败显式终态；服务重启将遗留 RUNNING 改判 TERMINATED | 重启后**不留虚假成功**；取消退还用户配额 |
+| 用户鉴权与额度 | 会话登录（X-Session-Token）优先 + 共享口令兼容，fail-closed；每用户每日次数 + 成本双上限 | 共享口令不再是唯一保护；成本按毫元整数累计防浮点漂移 |
+| 前端自动化回归 | vitest3 + RTL：conversationReducer 13 项 / SSE 解析 6 项（含中文多字节切分）/ useAgentStream 3 项；Playwright E2E 骨架显式启用 | 22 项前端测试全绿；取消、回滚、发布、切项目均有回归 |
+| 离线评测基线 | 100 个版本化生成/修改案例，0 模型调用一条命令复现 | 基线 100/100 通过；重构门禁通过率降幅 ≤2pp |
 | 高并发模型调用 | 虚拟线程线程池（JDK 21 自动切换，反射探测） | 对照实验：同批任务虚拟线程快 **18.5 倍** |
 | 请求级可观测 | `TracingFilter`：traceId + 延迟 + 状态 | 可按 `X-Trace-Id` 串联完整调用链 |
 
@@ -579,35 +589,47 @@ curl -s "http://<host>/canvas/api/traces/diff?from=r1&to=r2"
 ```
 backend/src/main/java/com/codecanvas/
 ├── agent/              编排与阶段
-│   ├── AgentOrchestrator.java    五阶段状态机（核心）+ 预算调度 + ReAct 接线
-│   ├── AgentStage.java           阶段定义
-│   ├── AgentListener.java        事件出口（不依赖 SSE，便于测试）
+│   ├── AgentOrchestrator.java    薄编排器（206 行）：阶段组织与组件接线
+│   ├── GenerationFlow.java       流水线分支：单文件 / 多文件规划 / 修改变更集
+│   ├── MultiFileGeneration.java  规划优先的多文件生成（≤8 文件，入口最后生成）
+│   ├── DeliveryFlow.java         交付组装：manifest 落盘 + 预览内联 + 发布
+│   ├── QualityGate.java          质检门禁：静态校验 + 运行时验证三态
+│   ├── AcceptanceFlow.java       验收断言生成与求值
+│   ├── ImageBindingFlow.java     配图绑定（预算与降级）
+│   ├── InputGuardrails.java      输入护栏
 │   ├── tool/                     工具注册表与文件读写、校验工具
-│   ├── trace/                    执行轨迹：事件录制（零侵入装饰器）+ 存储 + diff（C3）
-│   └── react/                    真 ReAct 循环：解析器 + 循环本体（纯 Java，C5）
-├── acceptance/         验收断言：从 PRD 生成 3 条完成判据 + 静态求值器（C4）
+│   ├── trace/                    执行轨迹：事件录制 + 存储 + diff + 生命周期状态
+│   └── react/                    真 ReAct 循环：解析器 + 循环本体（纯 Java）
+├── project/            项目、版本快照、仓储
+│   └── model/          ProjectPlan · FileChangeSet · ProjectManifest 等多文件模型
+├── sandbox/            沙箱
+│   ├── IframeSandboxExecutor     预览 iframe 隔离（已启用）
+│   ├── DockerSandboxExecutor     容器隔离（预留）
+│   └── build/                    受限构建：BuildPolicy · DependencyPolicy · SandboxWorkspace · BuildSandboxService
+├── security/           SessionAuthInterceptor（会话鉴权）· UserAuthService · ApiKeyInterceptor
+├── acceptance/         验收断言：从 PRD 生成 3 条完成判据 + 静态求值器
 ├── llm/                模型层
 │   ├── LlmProvider.java          提供方抽象
 │   ├── LangChain4jProvider.java  真实模型接入（双协议）
 │   ├── LlmGateway.java           分级路由 + 降级链 + 离线兜底
 │   ├── ModelRouter.java          复杂度打分与决策理由
 │   ├── TokenMeter.java           token 与成本计量
-│   ├── BudgetPolicy.java         预算准入控制：档位降级 + 修复封顶 + 拒单（C2）
+│   ├── BudgetPolicy.java         预算准入控制：档位降级 + 修复封顶 + 拒单
 │   └── mock/                     离线演示引擎与页面模板
 ├── context/            上下文工程
 │   ├── PromptLibrary.java        提示词集中管理
 │   └── ContextAssembler.java     相关文件选择 + 预算裁剪
-├── verification/       执行级验证：无头浏览器真跑 + 结构化运行时报告（C1）
-├── project/            项目、版本快照、仓储
-├── sandbox/            隔离抽象（iframe 已启用 / 容器预留）
-├── common/             静态校验、代码提取、token 估算
-└── web/                SSE 与 REST 接口（含 /api/traces 轨迹端点）
+├── verification/       执行级验证：无头浏览器真跑 + 三态结论（VERIFIED/NOT_VERIFIED/SKIPPED）
+├── web/                SSE 与 REST（含 /api/auth/* 鉴权、/api/traces 轨迹端点）
+├── guardrail/ mcp/ observability/ common/ config/
+└── CodeCanvasApplication.java
 ```
 
 ```
 frontend/src/
 ├── components/         对话面板、预览面板、版本时间线、阶段进度
 ├── hooks/              SSE 流消费与对话状态机
+├── __tests__/          vitest 回归：conversationReducer / chat.sse / useAgentStream
 ├── api/                接口封装
 └── styles/             主题变量
 ```
@@ -617,18 +639,23 @@ frontend/src/
 ## 测试
 
 ```bash
-cd backend && mvn test
+cd backend && mvn test          # 47 个测试类，270 用例（含 100 案例离线评测）
+cd frontend && npm test         # vitest：22 项回归（reducer / SSE / useAgentStream）
+cd frontend && npm run test:e2e # Playwright（需 CODECANVAS_E2E=1 显式启用）
 ```
 
-29 个用例，覆盖五类容易被改坏的地方：
+后端 270 用例覆盖的重点行为（精选）：
 
 | 测试 | 钉住的行为 |
 |------|-----------|
 | `HtmlValidatorTest` | 能查出未闭合标签、脚本括号错配、围栏与占位残留；**不误报**字符串、注释、**正则字面量**与**嵌套模板字符串**里的括号 |
 | `ModelRouterTest` | 首轮生成走旗舰、局部微调走轻量、常规增改走标准；降级链收敛不循环 |
-| `TokenMeterTest` | 反事实按旗舰单价重算、**能被外部复算**；离线引擎两条曲线都记 0；基准为 0 时返回 0 而不是编一个比例 |
-| `MockLlmProviderRepairTest` | 离线引擎的修复**确实让代码通过校验**，修改指令不破坏已有功能 |
 | `AgentOrchestrationTest` | 生成坏代码时自检闭环自动修复并恢复；沙箱拒存储时自动降级；跨轮版本累积；重建意图识别 |
+| `DependencyPolicyTest` | 依赖白名单：正常 semver 放行，`file:`/`git:`/http 直链/本地路径等逃逸向量全部拒绝 |
+| `BuildSandboxServiceTest` | 超时硬杀子进程（异步读流不阻塞 waitFor）、路径逃逸拒绝、磁盘配额 |
+| `RunTraceStoreTest` | 服务重启后遗留 RUNNING 任务改判 TERMINATED，不留虚假成功 |
+| `SessionAuthInterceptorTest` | 会话优先、共享口令兼容、fail-closed、ThreadLocal 身份清理 |
+| `CodeCanvasEvalHarnessTest` | 100 案例离线评测：规划/变更集/门禁三态判定，报告落盘 `evals/reports/` |
 
 其中 `AgentOrchestrationTest` 用了一个"第一次生成故意返回坏代码"的提供方替身，
 把自检闭环当成可断言的行为而不是靠人工观察。
@@ -677,26 +704,24 @@ $JAVA_HOME/bin/java backend/tools/VirtualThreadBench.java 400 60   # 400 个任�
 
 ## 已知边界
 
-- 生成物为**单文件 HTML 应用**，暂不支持多文件项目与依赖安装（那一步需要引入容器沙箱）
-- 离线引擎能产出可交互页面并支持一批常见修改指令，复杂需求需要接真实模型
-- 数据存在本地 `codecanvas-data/`，没有多用户隔离
+- 多文件项目模板目前只覆盖 **HTML 与 React（Vite）** 两种技术栈，暂不扩展 Vue 或后端生成
+- 构建沙箱为**单机受限进程**方案（路径/网络白名单/资源/超时/输出限量），容器级隔离
+  （Docker `--network none`）是升级路径；隔离级别在配置中诚实声明，不做伪装
+- 运行时验证依赖无头浏览器环境，未安装时如实报告 SKIPPED 并给出原因（不伪装通过）
+- 数据存在本地 `codecanvas-data/`；用户身份与配额已在应用层落地（C7），但会话与
+  任务存储仍是单机文件，多实例部署需要外置存储
 - 版本快照按全文存储，文件多时应改为增量 diff
 - 版本卡片上的"自检修复 N 次"统计的是**静态校验**触发的重试次数；
   运行时错误触发的修复走的是另一条路径，目前没有单独计数（界面文案上容易混淆，待补）
-- 生产构建产物已生成在 `frontend/dist-verify/`（本机脚本对 `dist/` 的清理阶段被环境的
-  安全删除机制拦截，用别的输出目录验证通过），可以删掉
 
 ---
 
 ## 后续方向
 
-1. 多文件项目 + 容器沙箱（依赖安装与构建）
-2. 生成结果一键部署到公网
+1. 容器级沙箱隔离（Docker `--network none`）落地，替换进程级方案的最后一层风险
+2. Playwright E2E 在 CI 实跑（当前骨架已就位，需 CI 环境 Chromium 安装）
 3. 把路由决策与成本台账持久化（目前是进程内累计、重启归零），据此做路由参数的离线回测
-4. 应用层限流：目前只有 nginx 的 IP 10r/m。任务级成本预算已由 C2 落地（单任务可下发
-   成本/延迟/token 三元预算），还缺**按用户**的配额层——防单个用户把模型额度吃光，
-   并发上限也正好对应这台 2 核 1.7G 的机器
-5. ReAct 分支的 A/B 实测数据回填：`docs/react-ab.md` 已备好方法论与取数表，
+4. ReAct 分支的 A/B 实测数据回填：`docs/react-ab.md` 已备好方法论与取数表，
    需在部署环境跑真实模型积累样本后填入对比结论
 
 ---
