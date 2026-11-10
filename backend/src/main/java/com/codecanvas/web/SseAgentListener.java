@@ -31,9 +31,18 @@ public class SseAgentListener implements AgentListener {
     /** 连接已断开（取消信号）：编排层据此停止后续阶段 */
     private final AtomicBoolean cancelled = new AtomicBoolean(false);
 
+    /** C7：成本记账回调（run 结束时按实际消耗记录），可为 null。 */
+    private final java.util.function.Consumer<Double> costRecorder;
+
     public SseAgentListener(SseEmitter emitter, ObjectMapper objectMapper) {
+        this(emitter, objectMapper, null);
+    }
+
+    public SseAgentListener(SseEmitter emitter, ObjectMapper objectMapper,
+                            java.util.function.Consumer<Double> costRecorder) {
         this.emitter = emitter;
         this.objectMapper = objectMapper;
+        this.costRecorder = costRecorder;
     }
 
     @Override
@@ -97,6 +106,9 @@ public class SseAgentListener implements AgentListener {
 
     @Override
     public void onResult(AgentResult result) {
+        if (costRecorder != null && result.usage() != null) {
+            costRecorder.accept(result.usage().cost());
+        }
         send("result", result);
     }
 

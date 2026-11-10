@@ -11,6 +11,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import com.codecanvas.security.ApiKeyInterceptor;
+import com.codecanvas.security.SessionAuthInterceptor;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
@@ -96,7 +97,7 @@ public class CodeCanvasConfig {
 
     /** 前端开发服务器直连时允许跨域（生产由网关处理）。 */
     @Bean
-    public WebMvcConfigurer corsConfigurer(ApiKeyInterceptor apiKeyInterceptor) {
+    public WebMvcConfigurer corsConfigurer(SessionAuthInterceptor sessionAuthInterceptor) {
         return new WebMvcConfigurer() {
             @Override
             public void addCorsMappings(CorsRegistry registry) {
@@ -108,9 +109,10 @@ public class CodeCanvasConfig {
 
             @Override
             public void addInterceptors(InterceptorRegistry registry) {
-                // S5 安全修复: 所有 /api/** 接口 (含 SSE 流式 /api/chat/stream) 必须带 X-API-Key,
-                // 缺失或错误一律拒绝 (fail-closed)。密钥由环境变量 CODECANVAS_API_KEY 提供。
-                registry.addInterceptor(apiKeyInterceptor).addPathPatterns("/api/**");
+                // C7 组合式认证: X-Session-Token (用户会话,优先) 或 X-API-Key (共享口令,兼容),
+                // 两者都缺失一律拒绝 (fail-closed)。/api/auth/** 是登录入口本身,放行。
+                registry.addInterceptor(sessionAuthInterceptor).addPathPatterns("/api/**")
+                        .excludePathPatterns("/api/auth/**");
             }
         };
     }

@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.concurrent.ExecutorService;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -33,21 +34,26 @@ public class ChatController {
     private final ProjectRunLock runLock;
     /** 每日生成额度（成本护栏） */
     private final DailyQuota dailyQuota;
+    /** C7：登录用户的独立配额与成本上限 */
+    private final UserQuota userQuota;
 
     public ChatController(AgentOrchestrator orchestrator,
                           ProjectRunLock runLock,
                           DailyQuota dailyQuota,
+                          UserQuota userQuota,
                           @Qualifier("agentExecutor") ExecutorService agentExecutor,
                           ObjectMapper objectMapper) {
         this.orchestrator = orchestrator;
         this.runLock = runLock;
         this.dailyQuota = dailyQuota;
+        this.userQuota = userQuota;
         this.agentExecutor = agentExecutor;
         this.objectMapper = objectMapper;
     }
 
     @PostMapping(value = "/stream", produces = "text/event-stream;charset=UTF-8")
-    public SseEmitter stream(@RequestBody ChatRequestDto request) {
+    public SseEmitter stream(@RequestHeader(value = "X-Session-Token", required = false) String sessionToken,
+                             @RequestBody ChatRequestDto request) {
         // 同一项目不允许并发生成：两个人格同时改写一个页面，结果不可解释也不可复现。
         // 存储层已能保证不丢版本，但产品语义上应当直接拒绝（409），让用户等前一次结束。
         // 先扣额度再占锁：额度是成本护栏，必须在真正开始生成前生效。
@@ -56,12 +62,19 @@ public class ChatController {
             throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,
                     "今日生成额度已用尽（上限 " + dailyQuota.limit() + " 次/天），请明天再试或联系管理员");
         }
+        // C7：登录用户按身份独立计数；共享口令匿名访问仍只受全局额度管控
+        String username = com.codecanvas.security.SessionAuthInterceptor.currentUser();
+        String userRejectReason = username == null ? null : userQuota.tryAcquire(username);
+        if (userRejectReason != null) {
+            throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS, userRejectReason);
+        }
         if (!runLock.tryAcquire(request.projectId())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "该项目正在生成中，请等待当前生成结束（同一项目不支持并发生成）");
         }
         SseEmitter emitter = new SseEmitter(TIMEOUT_MILLIS);
-        SseAgentListener listener = new SseAgentListener(emitter, objectMapper);
+        SseAgentListener listener = new SseAgentListener(emitter, objectMapper,
+                cost -> userQuota.recordCost(username, cost));
 
         emitter.onTimeout(() -> listener.abort("生成超时"));
         emitter.onError(error -> listener.abort("连接异常：" + error.getMessage()));
@@ -86,6 +99,9 @@ public class ChatController {
                 // 生成被取消（用户关页面）时退还额度：没有产出就不该占用当日次数
                 if (listener.isCancelled()) {
                     dailyQuota.refund();
+                    if (username != null) {
+                        userQuota.refund(username);
+                    }
                 }
             }
         });

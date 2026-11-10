@@ -1,0 +1,47 @@
+{
+  "timestamp" : "2026-11-10T13:46:07.4234464",
+  "total" : 100,
+  "passed" : 100,
+  "failed" : 0,
+  "passRate" : "100.0%",
+  "harnessP50us" : 24,
+  "harnessP95us" : 329,
+  "byCategory" : [ {
+    "passRate" : "100.0%",
+    "total" : 30,
+    "failed" : 0,
+    "passed" : 30,
+    "category" : "routing"
+  }, {
+    "passRate" : "100.0%",
+    "total" : 30,
+    "failed" : 0,
+    "passed" : 30,
+    "category" : "validator"
+  }, {
+    "passRate" : "100.0%",
+    "total" : 10,
+    "failed" : 0,
+    "passed" : 10,
+    "category" : "extractor"
+  }, {
+    "passRate" : "100.0%",
+    "total" : 5,
+    "failed" : 0,
+    "passed" : 5,
+    "category" : "tokens"
+  }, {
+    "passRate" : "100.0%",
+    "total" : 15,
+    "failed" : 0,
+    "passed" : 15,
+    "category" : "acceptance"
+  }, {
+    "passRate" : "100.0%",
+    "total" : 10,
+    "failed" : 0,
+    "passed" : 10,
+    "category" : "budget"
+  } ],
+  "failedCases" : [ ]
+}
