@@ -61,7 +61,7 @@ jobs:
         run: python -m pytest -q
 
   frontend:
-    name: Frontend · build
+    name: Frontend · build & unit tests
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -77,8 +77,99 @@ jobs:
 
       - run: npm ci
 
+      - name: Unit tests (vitest · reducer / SSE / useAgentStream)
+        run: npm test
+
       - name: Type check & build
         run: npm run build
+
+  e2e:
+    name: E2E · browser full-loop (offline engine)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # 离线引擎模式：不配模型 Key，后端自动降级为 MOCK 引擎
+      # （/api/config 返回 llmMode=MOCK，界面明示），E2E 全链路仍然真实可跑。
+      - name: Package backend
+        working-directory: backend
+        run: mvn -B -q package -DskipTests
+
+      - name: Start backend
+        run: |
+          nohup java -jar backend/target/codecanvas-backend.jar --codecanvas.api.key=e2e-ci-key --server.port=8080 > backend-e2e.log 2>&1 &
+          for i in $(seq 1 60); do
+            curl -sf -H "X-API-Key: e2e-ci-key" http://localhost:8080/api/config > /dev/null && echo "backend ready" && break
+            sleep 2
+          done
+          curl -sf -H "X-API-Key: e2e-ci-key" http://localhost:8080/api/config | grep -o '"llmMode":"[A-Z]*"'
+
+      - name: Start frontend dev server
+        run: |
+          cd frontend
+          npm ci
+          VITE_API_KEY=e2e-ci-key nohup npm run dev -- --port 3000 > ../frontend-e2e.log 2>&1 &
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:3000 > /dev/null && echo "frontend ready" && break
+            sleep 2
+          done
+
+      - name: Install Chromium
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Run E2E (generate → cancel → rollback → deploy)
+        working-directory: frontend
+        env:
+          CODECANVAS_E2E: '1'
+          CODECANVAS_API_KEY: e2e-ci-key
+        run: npx playwright test
+
+      - name: Upload traces on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: frontend/test-results/
+          retention-days: 7
+
+  dependency-scan:
+    name: Dependencies · OSS Index audit (CVSS>=7 fails)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      # 轻量漏洞扫描：OSS Index 在线漏洞库（不需要下载 NVD 全量库）。
+      # 门禁：CVSS>=7 即失败（高危无豁免不合并）。匿名请求可能限流，重试 3 次。
+      - name: OSS Index audit
+        run: |
+          for i in 1 2 3; do
+            mvn -B org.sonatype.ossindex.maven:ossindex-maven-plugin:3.2.0:audit -Dossindex.cvssScoreThreshold=7 && exit 0
+            echo "attempt $i failed (可能是匿名限流), retrying in 30s..."
+            sleep 30
+          done
+          exit 1
 
   bundle-guard:
     name: Backend · bundle size guard

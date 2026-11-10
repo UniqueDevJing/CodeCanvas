@@ -66,10 +66,12 @@ test('生成 → 取消 → 回滚 → 发布 全链路', async ({ page }) => {
   }
 
   // ---------- 4. 发布 ----------
+  // 实际 UI：TopBar「发布」按钮点击后直接异步发布，成功弹出「发布结果」对话框
+  // （无中间确认步骤——骨架期的"确认"假设与实现不符，已按实况修正）。
   const deployButton = page.getByRole('button', { name: /发布|发布到公网|deploy/i }).first();
   await deployButton.click();
-  const confirmButton = page.getByRole('button', { name: /确认|发布/ }).last();
-  await confirmButton.click();
-  // 发布成功后应出现分享链接（/a/{key}）
-  await expect(page.getByText(/\/a\/|分享链接|发布成功/).first()).toBeVisible({ timeout: 30_000 });
+  const deployDialog = page.getByRole('dialog', { name: '发布结果' });
+  await expect(deployDialog).toBeVisible({ timeout: 30_000 });
+  // 分享链接（/a/{key}）在结果对话框的输入框 value 中（input 的 value 不属于 text node）
+  await expect(deployDialog.locator('input.deploy-link')).toHaveValue(/\/a\//, { timeout: 10_000 });
 });
