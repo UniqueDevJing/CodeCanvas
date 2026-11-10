@@ -1,66 +1,34 @@
 package com.codecanvas.agent;
 
-import com.codecanvas.agent.tool.AgentWorkspace;
-import com.codecanvas.agent.tool.Tool;
-import com.codecanvas.agent.tool.ToolRegistry;
-import com.codecanvas.agent.tool.VisualGatewayClient;
-import com.codecanvas.mcp.McpClientBridge;
-import com.codecanvas.agent.trace.RunTrace;
-import com.codecanvas.agent.trace.RunTraceRecorder;
-import com.codecanvas.agent.trace.RunTraceStore;
-import com.codecanvas.agent.react.ReActAgent;
-import com.codecanvas.acceptance.AcceptanceEvaluator;
 import com.codecanvas.acceptance.AcceptanceSpec;
-import com.codecanvas.acceptance.SemanticScorer;
-import com.codecanvas.common.CodeExtractor;
+import com.codecanvas.agent.tool.AgentWorkspace;
 import com.codecanvas.common.HtmlValidator;
-import com.codecanvas.common.TokenEstimator;
-import com.codecanvas.guardrail.GuardrailChain;
-import com.codecanvas.guardrail.GuardrailContext;
-import com.codecanvas.guardrail.GuardrailResult;
-import com.codecanvas.guardrail.StructuredOutputGuardrail;
-import java.util.function.Function;
-import com.codecanvas.context.ContextAssembler;
-import com.codecanvas.context.PromptLibrary;
 import com.codecanvas.llm.LlmGateway;
 import com.codecanvas.llm.LlmPurpose;
 import com.codecanvas.llm.LlmRequest;
-import com.codecanvas.llm.RouteDecision;
 import com.codecanvas.llm.TokenMeter;
-import com.codecanvas.llm.BudgetPolicy;
-import com.codecanvas.llm.TaskBudget;
 import com.codecanvas.project.Project;
-import com.codecanvas.project.ProjectFile;
 import com.codecanvas.project.ProjectService;
-import com.codecanvas.project.VersionSnapshot;
-import com.codecanvas.sandbox.SandboxExecutorResolver;
-import com.codecanvas.sandbox.SandboxedPreview;
-import com.codecanvas.verification.RuntimeReport;
-import com.codecanvas.verification.RuntimeVerificationPolicy;
-import com.codecanvas.verification.RuntimeVerifier;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
+import com.codecanvas.agent.trace.RunTrace;
+import com.codecanvas.agent.trace.RunTraceRecorder;
+import com.codecanvas.agent.trace.RunTraceStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 /**
- * Agent 编排核心。
- *
- * <p>把"一句话 → 可运行的软件"拆成五个可观测、可单独调试的阶段：
- * 需求澄清 → 任务规划 → 代码生成 → 质量校验 → 自检修复。
- *
- * <p>两个关键设计：
+ * Agent 编排核心（T1/C1 瘦身版）：职责收窄为「五阶段流程编排」——
+ * 需求澄清 → 任务规划与代码生成 → 配图绑定 → 质量校验与自检修复 → 交付。
+ * 具体策略已拆为可独立测试的组件：
+ * {@link InputGuardrails} 两级拦截链入口、{@link AcceptanceFlow} C4 验收断言、
+ * {@link GenerationFlow} 预算调度与 REACT/流水线生成、{@link ImageBindingFlow} 配图槽位绑定、
+ * {@link QualityGate} 质量门与自检修复闭环、{@link DeliveryFlow} 版本落库与用量台账。
+ * 两个关键设计：
  * <ol>
  *   <li><b>自检闭环</b>：生成结果必须先过静态校验才有资格交付；不通过就把具体问题回注给模型定点修复，
- *       轮次由预算策略（codecanvas.budget.max-heal-attempts）统一控制。这样"生成的代码跑不起来"
- *       从用户体验问题变成一个可度量的恢复率指标。</li>
- *   <li><b>上下文工程</b>：多轮迭代时不把历史对话和全部历史代码原样塞进提示词，而是注入
- *       结构化需求 + 历史变更摘要 + 相关文件。轮次越多，省得越多。</li>
+ *       轮次由预算策略统一控制。「生成的代码跑不起来」从体验问题变成可度量的恢复率指标。</li>
+ *   <li><b>上下文工程</b>：多轮迭代不把历史对话和全部历史代码塞进提示词，而是注入
+ *       结构化需求 + 历史变更摘要 + 相关文件。</li>
  * </ol>
  */
 @Service
@@ -68,90 +36,37 @@ public class AgentOrchestrator {
 
     private static final Logger log = LoggerFactory.getLogger(AgentOrchestrator.class);
 
-    // 自检修复轮次由 BudgetPolicy 的 codecanvas.budget.max-heal-attempts 统一控制。
-    // 原先这里有个 MAX_HEAL_ATTEMPTS 死常量，从未被任何代码引用，已删除——
-    // 两处"最大轮次"只会让配置和代码互相说谎。
-
-    private static final String MAIN_FILE = "index.html";
-
     private final ProjectService projectService;
     private final LlmGateway gateway;
-    private final ContextAssembler contextAssembler;
     private final TokenMeter meter;
-    private final SandboxExecutorResolver sandbox;
-    private final RuntimeVerifier runtimeVerifier;
-    private final RuntimeVerificationPolicy runtimePolicy;
-    private final BudgetPolicy budgetPolicy;
     private final RunTraceStore traceStore;
-    /** 视觉能力网关客户端（W2.5）：为 null 或未启用时，配图槽位直接降级为占位图。 */
-    private final VisualGatewayClient visualClient;
-    /** 配图预算（W2.6）：每次运行的花费上限，超了就把剩余槽位降级为占位图。 */
-    private final ImageBudget imageBudget = ImageBudget.fromEnv();
-
-    /** C4：验收断言生成开关（断言作为"生成完成"的客观判据，失败并入自检修复闭环） */
-    @Value("${codecanvas.acceptance.enabled:true}")
-    private boolean acceptanceEnabled;
-
-    /** C-A：语义打分器（semantic-enabled=true 时注入；缺省 null → 语义断言诚实降级） */
-    @Autowired(required = false)
-    private SemanticScorer semanticScorer;
-
-    /**
-     * P0-2：外部 MCP Server 工具桥。只有 codecanvas.mcp.client.enabled=true 时才存在 Bean，
-     * 缺省为 null → 工具集与改造前完全一致，老行为零回归。
-     */
-    @Autowired(required = false)
-    private McpClientBridge mcpClientBridge;
-
-    /**
-     * P0-3：两级拦截链 + 结构化输出自校正。
-     * 用 required=false 字段注入而不改构造函数签名：既不动已有测试的构造调用，
-     * 也让纯 new 出来的编排者保持改造前行为（为 null 时跳过护栏）。
-     */
-    @Autowired(required = false)
-    private GuardrailChain guardrailChain;
-
-    @Autowired(required = false)
-    private StructuredOutputGuardrail structuredOutputGuardrail;
-
-    /** C5：ReAct 自主循环的步数上限（三重终止条件之一；另两个是预算耗尽与校验通过） */
-    @Value("${codecanvas.react.max-steps:10}")
-    private int reactMaxSteps;
+    private final AcceptanceFlow acceptanceFlow;
+    private final GenerationFlow generationFlow;
+    private final ImageBindingFlow imageBindingFlow;
+    private final QualityGate qualityGate;
+    private final DeliveryFlow deliveryFlow;
+    private final InputGuardrails guardrails;
 
     public AgentOrchestrator(ProjectService projectService,
                              LlmGateway gateway,
-                             ContextAssembler contextAssembler,
                              TokenMeter meter,
-                             SandboxExecutorResolver sandbox,
-                             RuntimeVerifier runtimeVerifier,
-                             RuntimeVerificationPolicy runtimePolicy,
-                             BudgetPolicy budgetPolicy,
-                             RunTraceStore traceStore) {
-        this(projectService, gateway, contextAssembler, meter, sandbox, runtimeVerifier,
-                runtimePolicy, budgetPolicy, traceStore, null);
-    }
-
-    @org.springframework.beans.factory.annotation.Autowired
-    public AgentOrchestrator(ProjectService projectService,
-                             LlmGateway gateway,
-                             ContextAssembler contextAssembler,
-                             TokenMeter meter,
-                             SandboxExecutorResolver sandbox,
-                             RuntimeVerifier runtimeVerifier,
-                             RuntimeVerificationPolicy runtimePolicy,
-                             BudgetPolicy budgetPolicy,
                              RunTraceStore traceStore,
-                             VisualGatewayClient visualClient) {
+                             AcceptanceFlow acceptanceFlow,
+                             GenerationFlow generationFlow,
+                             ImageBindingFlow imageBindingFlow,
+                             QualityGate qualityGate,
+                             DeliveryFlow deliveryFlow,
+                             InputGuardrails guardrails) {
         this.projectService = projectService;
         this.gateway = gateway;
-        this.contextAssembler = contextAssembler;
         this.meter = meter;
-        this.sandbox = sandbox;
-        this.runtimeVerifier = runtimeVerifier;
-        this.runtimePolicy = runtimePolicy;
-        this.budgetPolicy = budgetPolicy;
         this.traceStore = traceStore;
-        this.visualClient = visualClient;
+        this.acceptanceFlow = acceptanceFlow;
+        this.generationFlow = generationFlow;
+        this.imageBindingFlow = imageBindingFlow;
+        this.qualityGate = qualityGate;
+        this.deliveryFlow = deliveryFlow;
+        this.guardrails = guardrails;
     }
 
     public void run(AgentRunRequest request, AgentListener listener) {
@@ -160,7 +75,6 @@ public class AgentOrchestrator {
                     + "）：未检测到模型 API Key，生成的是内置模板页面，不会按你的需求定制。"
                     + "配置 CODECANVAS_OPENAI_KEY 后重启即可使用真实模型。");
         }
-
         // C3 执行轨迹：每次运行一个 runId，录制全部回调后落盘，供回放与 diff
         RunTraceRecorder recorder = new RunTraceRecorder(RunTrace.newId(), listener);
         recorder.begin(String.valueOf(request.trigger()),
@@ -168,7 +82,6 @@ public class AgentOrchestrator {
                 request.message());
         TokenMeter.RunMeter run = meter.newRunMeter();
         // P1-6：按运行维度统计语义缓存命中并如实留痕（同项目串行生成，差值法可靠）。
-        // 用 status 事件而非新增 SSE 事件名，前端「决策记录」与执行轨迹都能直接看到。
         long cacheHitsBefore = gateway.cacheHits();
         try {
             doRun(request, recorder, run);
@@ -190,25 +103,8 @@ public class AgentOrchestrator {
 
     private void doRun(AgentRunRequest request, AgentListener listener, TokenMeter.RunMeter run) {
         // ============ P0-3 输入护栏 ============
-        // 只对用户发起的需求生效：RUNTIME_ERROR 是系统内部触发的修复运行，
-        // message 本来就是空的，不该被"空需求"规则误拦。
-        boolean userInitiated = request.trigger() != AgentRunRequest.Trigger.RUNTIME_ERROR;
-        if (guardrailChain != null && userInitiated) {
-            GuardrailChain.Verdict inVerdict = guardrailChain.evaluate(
-                    GuardrailResult.Phase.INPUT, GuardrailContext.input(safe(request.message())));
-            listener.onToolCall("guardrail_input", inVerdict.toAuditMap(), inVerdict.summary());
-            if (inVerdict.blocked()) {
-                String reason = inVerdict.results().stream()
-                        .filter(r -> r.outcome() == GuardrailResult.Outcome.REJECT)
-                        .map(GuardrailResult::reason)
-                        .findFirst()
-                        .orElse("输入未通过护栏");
-                listener.onError("输入未通过护栏：" + reason);
-                return;
-            }
-            if (inVerdict.degraded()) {
-                listener.onStatus("输入护栏有规则降级（已留痕），本次按原有流程继续");
-            }
+        if (!guardrails.checkInput(request, listener)) {
+            return;
         }
 
         // ============ 会话 ============
@@ -225,9 +121,8 @@ public class AgentOrchestrator {
         boolean runtimeErrorRun = request.trigger() == AgentRunRequest.Trigger.RUNTIME_ERROR;
         boolean firstTurn = project.isEmpty();
         String requirement = runtimeErrorRun ? "修复页面运行时报错" : safe(request.message());
-        // 用户在一个已有项目里又重新完整描述了一遍应用（"做一个XX"），意图是重建而不是打补丁。
-        // 不做这个区分的话，模型会把新需求当成对旧页面的局部修改，出来的东西谁都不满意。
-        boolean rebuild = !firstTurn && !runtimeErrorRun && isRebuildIntent(requirement);
+        // 用户在已有项目里重新完整描述了一遍应用（「做一个XX」）→ 意图是重建而不是打补丁。
+        boolean rebuild = !firstTurn && !runtimeErrorRun && PromptSupport.isRebuildIntent(requirement);
 
         // ============ 1. 需求澄清 ============
         checkCancelled(listener);
@@ -238,517 +133,51 @@ public class AgentOrchestrator {
         if (rebuild) {
             listener.onStatus("看起来你在描述一个全新的应用，我会重新做一个，而不是在原来页面上打补丁");
         }
-
         String prd = project.prd();
         if (firstTurn || rebuild || prd == null || prd.isBlank()) {
-            RouteDecision prdRoute = gateway.router().route(LlmPurpose.PRD, requirement, true, 0);
+            var prdRoute = gateway.router().route(LlmPurpose.PRD, requirement, true, 0);
             listener.onStatus("正在整理需求");
-            LlmGateway.CallResult prdCall = gateway.call(
+            var prdCall = gateway.call(
                     LlmRequest.of(LlmPurpose.PRD, prdRoute.model(),
-                            PromptLibrary.PRD_SYSTEM, PromptLibrary.prdUserPrompt(requirement)),
+                            com.codecanvas.context.PromptLibrary.PRD_SYSTEM,
+                            com.codecanvas.context.PromptLibrary.prdUserPrompt(requirement)),
                     prdRoute, run);
             prd = prdCall.response().text().trim();
             project = projectService.updatePrd(project, prd);
-            listener.onTokens(usage(run, prdCall, prdRoute, 0, 0));
+            listener.onTokens(UsageSupport.usage(run, meter, prdCall, prdRoute, 0, 0));
         }
 
-        // ============ C4 验收断言生成 ============
-        // 从结构化需求（PRD）推导 3 条验收断言，作为本轮"生成完成"的客观判据；
-        // 只在首次生成/重建时生成（增量修改沿用既有页面形态，断言反而容易误伤）。
-        AcceptanceSpec acceptance = AcceptanceSpec.empty();
-        if (acceptanceEnabled && (firstTurn || rebuild)) {
-            try {
-                RouteDecision accRoute = gateway.router().route(LlmPurpose.PRD, requirement, true, 0);
-                LlmGateway.CallResult accCall = gateway.call(
-                        LlmRequest.of(LlmPurpose.PRD, accRoute.model(), PromptLibrary.ACCEPTANCE_SYSTEM,
-                                PromptLibrary.acceptanceUserPrompt(prd)),
-                        accRoute, run);
-                String rawAcceptance = accCall.response().text();
+        // ============ C4 验收断言 ============
+        AcceptanceSpec acceptance = acceptanceFlow.generate(firstTurn, rebuild, requirement, prd, run, listener);
 
-                // P0-3 输出护栏：解析 → 字段级校验 → 带违规原因的定向修复 → 复校 → 有界重试 → 诚实降级。
-                // 改造前这里只有 AcceptanceSpec.parse，模型漏字段会静默变成空断言集，
-                // 界面看起来一切正常，实际"生成完成"的客观判据被悄悄丢掉了。
-                if (structuredOutputGuardrail != null) {
-                    Function<String, String> repairer = prompt -> {
-                        RouteDecision rr = gateway.router().route(LlmPurpose.PRD, prompt, true, 0);
-                        return gateway.call(LlmRequest.of(LlmPurpose.PRD, rr.model(),
-                                        StructuredOutputGuardrail.REPAIR_SYSTEM, prompt),
-                                rr, run).response().text();
-                    };
-                    StructuredOutputGuardrail.Enforcement enforced =
-                            structuredOutputGuardrail.enforce(rawAcceptance, repairer, listener);
-                    acceptance = enforced.spec();
-                    if (enforced.downgraded()) {
-                        listener.onStatus("验收断言经 " + enforced.repairAttempts()
-                                + " 次定向修复仍未通过字段契约，已如实降级为不纳入判据");
-                    }
-                } else {
-                    acceptance = AcceptanceSpec.parse(rawAcceptance);
-                }
+        // ============ 2. 任务规划 + 3. 代码生成（REACT/流水线 + 配图绑定）============
+        LlmPurpose purpose = runtimeErrorRun ? LlmPurpose.FIX
+                : ((firstTurn || rebuild) ? LlmPurpose.CODE : LlmPurpose.MODIFY);
+        GenerationFlow.Outcome gen = generationFlow.run(request, listener, run, project, prd,
+                requirement, purpose, firstTurn, rebuild);
+        AgentWorkspace workspace = gen.workspace();
+        imageBindingFlow.bind(workspace, gen.tools(), listener);
 
-                // 决策留痕复用 tool 事件：不新增 SSE 事件名，也自动进 RunTraceRecorder 的执行轨迹
-                if (guardrailChain != null) {
-                    GuardrailChain.Verdict outVerdict = guardrailChain.evaluate(
-                            GuardrailResult.Phase.OUTPUT,
-                            GuardrailContext.output(rawAcceptance, null, acceptance, 0));
-                    listener.onToolCall("guardrail_output", outVerdict.toAuditMap(), outVerdict.summary());
-                }
-
-                if (!acceptance.isEmpty()) {
-                    listener.onStatus("已从需求推导出 " + acceptance.checks().size()
-                            + " 条验收断言，生成后会逐条自动核对");
-                }
-            } catch (CancelledException cancelled) {
-                throw cancelled;
-            } catch (Exception e) {
-                log.warn("验收断言生成失败（不阻断交付）: {}", e.getMessage());
-            }
-        }
-
-        // ============ 2. 任务规划 ============
-        LlmPurpose purpose = runtimeErrorRun ? LlmPurpose.FIX : ((firstTurn || rebuild) ? LlmPurpose.CODE : LlmPurpose.MODIFY);
-        RouteDecision route = gateway.router().route(purpose, requirement + " " + prd, firstTurn,
-                project.files().size());
-        // 注意：不要往界面上抛"档位""打分明细"这类内部信息。
-        // 模型路由的收益要看成本和质量数据，而不是让用户读一遍打分公式。
-        checkCancelled(listener);
-        listener.onStage(AgentStage.PLAN, (firstTurn || rebuild)
-                ? "已经想清楚要做成什么样，开始写代码"
-                : "已确认要改哪些地方");
-
-        AgentWorkspace workspace = new AgentWorkspace();
-        workspace.seed(project.files());
-        ToolRegistry tools = new ToolRegistry(workspace);
-        // P0-2：外部 MCP Server 的工具按"运行"注入，与会话级内置工具并列。
-        // ReAct 的 describeTools() 会自动带上它们；PIPELINE 路径不受影响。
-        if (mcpClientBridge != null) {
-            List<Tool> remote = mcpClientBridge.externalTools();
-            remote.forEach(tools::register);
-            if (!remote.isEmpty()) {
-                listener.onStatus("已通过 MCP 接入 " + remote.size()
-                        + " 个外部工具，自主模式（ReAct）可直接调用");
-            }
-        }
-        Map<String, Object> listArgs = Map.of();
-        listener.onToolCall("list_files", listArgs, tools.call("list_files", listArgs));
-
-        // ============ 3. 代码生成（两条可切换的执行路径：REACT 自主循环 / PIPELINE 固定流水线）============
-        ContextAssembler.Selection selection = contextAssembler.select(project.files(), requirement);
-        int rawContextTokens = rawContextTokens(project, requirement);
-
-        String systemPrompt = switch (purpose) {
-            case CODE -> PromptLibrary.CODE_SYSTEM;
-            case MODIFY -> PromptLibrary.MODIFY_SYSTEM;
-            default -> PromptLibrary.FIX_SYSTEM;
-        };
-        String userPrompt = buildUserPrompt(purpose, prd, requirement, workspace, selection, request, project);
-
-        // ============ 预算感知调度（C2） ============
-        // 规划阶段就按预算决定档位与自检修复轮次：路由想要的档位负担得起就保留（保质量），
-        // 否则降级到第一个负担得起的档位；预算吃紧自动收减 HEAL 轮次；连最便宜档都超则降级并关闭修复。
-        TaskBudget budget = budgetPolicy.resolve(request.budget());
-        BudgetPolicy.BudgetDecision budgetDecision = budgetPolicy.decide(
-                route, budget, TokenEstimator.estimate(userPrompt), 8192);
-        RouteDecision genRoute = budgetDecision.route();
-        if (budgetDecision.overBudget()) {
-            listener.onStatus("预算不足：预估成本超过预算上限，已降级到最便宜档位并关闭自检修复以保证可用");
-        } else if (budget != null && budget.hasCost()) {
-            listener.onStatus("预算约束已生效：" + budgetDecision.reason());
-        }
-
-        checkCancelled(listener);
-        listener.onStage(AgentStage.GENERATE, purpose == LlmPurpose.FIX
-                ? "正在修复报错"
-                : "正在写页面代码");
-
-        // C5：REACT 路径——模型自己决定"先写什么、何时校验、要不要重写"，
-        // maxSteps / 预算耗尽 / 校验通过三重终止；产不出页面时自动退回流水线兜底。
-        LlmGateway.CallResult generateCall = null;
-        if (request.strategy() == AgentRunRequest.Strategy.REACT) {
-            listener.onStatus("自主模式（ReAct）：模型将自行决定调用工具的顺序");
-            final LlmGateway.CallResult[] lastCall = new LlmGateway.CallResult[1];
-            ReActAgent reactAgent = new ReActAgent(prompt -> {
-                LlmGateway.CallResult r = gateway.call(
-                        new LlmRequest(LlmPurpose.CODE, genRoute.model(),
-                                PromptLibrary.REACT_SYSTEM, prompt, 0.3, 8192),
-                        genRoute, run);
-                lastCall[0] = r;
-                return r.response().text();
-            }, tools, reactMaxSteps);
-            ReActAgent.Outcome outcome = reactAgent.run(
-                    requirement + (prd == null || prd.isBlank() ? "" : "\n【结构化需求】\n" + prd),
-                    () -> !budgetPolicy.exceeded(budget, run.snapshot()),
-                    new ReActAgent.Validation() {
-                        @Override
-                        public boolean passed() {
-                            return HtmlValidator.validate(workspace.read(MAIN_FILE)).isEmpty();
-                        }
-
-                        @Override
-                        public String detail() {
-                            return HtmlValidator.describe(HtmlValidator.validate(workspace.read(MAIN_FILE)));
-                        }
-                    },
-                    (tool, brief) -> listener.onToolCall(tool, Map.of(), brief));
-            generateCall = lastCall[0];
-            listener.onStatus("自主模式结束（" + outcome.stopReason() + "）："
-                    + outcome.steps() + " 轮 / " + outcome.toolCalls() + " 次工具调用"
-                    + (outcome.completed() ? "，页面已通过校验" : "，转入固定校验与修复流程"));
-        }
-
-        if (generateCall == null || workspace.read(MAIN_FILE).isBlank()) {
-            // 流水线路径（默认；也是 REACT 产不出内容时的兜底）
-            LlmGateway.CallResult pipelineCall = gateway.callStreaming(
-                    new LlmRequest(purpose, genRoute.model(), systemPrompt, userPrompt, 0.3, 8192),
-                    genRoute,
-                    delta -> listener.onDelta(MAIN_FILE, delta),
-                    run);
-            generateCall = pipelineCall;
-
-            String html = CodeExtractor.extractHtml(pipelineCall.response().text());
-            String previous = project.mainFileContent();
-            if (html.isBlank() || (!html.toLowerCase().contains("<html") && !previous.isBlank())) {
-                listener.onStatus("这次没生成出完整页面，我先保留上一版再检查一遍");
-                html = previous.isBlank() ? html : previous;
-            }
-            Map<String, Object> writeArgs = new LinkedHashMap<>();
-            writeArgs.put("path", MAIN_FILE);
-            writeArgs.put("content", html);
-            tools.call("write_file", writeArgs);
-            listener.onToolCall("write_file", Map.of("path", MAIN_FILE, "chars", html.length()),
-                    "已写入 " + MAIN_FILE + "（" + html.length() + " 字符）");
-            listener.onFile(MAIN_FILE, previous.isBlank() ? "create" : "update", byteLengthOf(html));
-        } else {
-            listener.onFile(MAIN_FILE, "update", byteLengthOf(workspace.read(MAIN_FILE)));
-        }
-
-        // ============ 3.5 配图绑定（W2.5） ============
-        // 模型只声明"这里需要一张图"（data-slot），是否真出图由运行时决定：
-        // 网关可用就换成产物 URL，不可用就换成渐变占位图——页面永远可渲染。
-        if (visualClient != null && visualClient.enabled()) {
-            ImageSlotBinder.Result bound = ImageSlotBinder.bind(workspace.read(MAIN_FILE),
-                    (slot, prompt, aspect) -> {
-                        if (!imageBudget.tryReserve()) {
-                            // 预算优先于"多一张图"：宁可降级成占位图，也不让一次生成把额度烧穿
-                            listener.onStatus(imageBudget.summary() + "，剩余槽位降级为占位图");
-                            return VisualGatewayClient.Result.degraded("image-budget-exhausted");
-                        }
-                        try {
-                            VisualGatewayClient.Result result =
-                                    visualClient.generate(prompt, aspect, slot, null);
-                            imageBudget.settle(result.degraded() ? 0.0 : result.estimatedUsd());
-                            return result;
-                        } catch (CancelledException cancelled) {
-            throw cancelled;
-        } catch (Exception e) {
-                            imageBudget.settle(0.0);
-                            return VisualGatewayClient.Result.degraded(
-                                    "client-error:" + e.getClass().getSimpleName());
-                        }
-                    });
-            if (bound.changed()) {
-                Map<String, Object> reWrite = new LinkedHashMap<>();
-                reWrite.put("path", MAIN_FILE);
-                reWrite.put("content", bound.html());
-                tools.call("write_file", reWrite);
-                listener.onFile(MAIN_FILE, "update", byteLengthOf(bound.html()));
-                for (ImageSlotBinder.Bound image : bound.bound()) {
-                    listener.onImage(image.assetId(), image.url(), image.slot(),
-                            image.width(), image.height(), image.costUsd());
-                }
-                long generated = bound.bound().stream().filter(b -> !b.degraded()).count();
-                listener.onStatus("配图 " + generated + "/" + bound.bound().size()
-                        + " 张（失败处已用渐变占位）；" + imageBudget.summary());
-            }
-        }
-
-        // ============ 4. 质量校验 ============
+        // ============ 4. 质量校验 + 5. 自检修复 ============
         checkCancelled(listener);
         listener.onStage(AgentStage.VALIDATE, "正在检查页面能不能正常打开");
-        List<HtmlValidator.Issue> issues = validate(tools, listener, workspace, acceptance);
+        java.util.List<HtmlValidator.Issue> issues = qualityGate.validate(gen.tools(), listener,
+                workspace, acceptance);
+        guardrails.auditArtifact(listener, workspace.read(GenerationFlow.MAIN_FILE), acceptance);
 
-        // P0-3 产物侧输出护栏：与自检修复判据同源（HtmlValidator），
-        // 只在首次校验留痕一次，避免每轮修复都刷一条重复决策。
-        if (guardrailChain != null) {
-            GuardrailChain.Verdict artifactVerdict = guardrailChain.evaluate(
-                    GuardrailResult.Phase.OUTPUT,
-                    GuardrailContext.output(null, workspace.read(MAIN_FILE), acceptance, 0));
-            listener.onToolCall("guardrail_artifact", artifactVerdict.toAuditMap(),
-                    artifactVerdict.summary());
-        }
-
-        // ============ 5. 自检修复 ============
-        int healAttempts = 0;
-        int allowedHeal = budgetDecision.allowedHealAttempts();
-        while (!issues.isEmpty() && healAttempts < allowedHeal) {
-            healAttempts++;
-            String errorText = HtmlValidator.describe(issues);
-            checkCancelled(listener);
-            listener.onStage(AgentStage.HEAL, "发现一处问题，正在自动修复（第 " + healAttempts + " 次）");
-            listener.onHeal(healAttempts, issues.get(0).message(), "已定位问题，正在做最小改动修复");
-
-            LlmGateway.CallResult fixCall = gateway.call(
-                    new LlmRequest(LlmPurpose.FIX, genRoute.model(), PromptLibrary.FIX_SYSTEM,
-                            PromptLibrary.fixUserPrompt(prd, workspace.snapshot(), errorText), 0.2, 8192),
-                    genRoute, run);
-
-            String fixed = CodeExtractor.extractHtml(fixCall.response().text());
-            if (fixed.isBlank() || !fixed.toLowerCase().contains("<html")) {
-                listener.onStatus("这次修复没有成功，我保留当前版本");
-                break;
-            }
-            workspace.write(MAIN_FILE, fixed);
-            listener.onFile(MAIN_FILE, "update", byteLengthOf(fixed));
-            issues = validate(tools, listener, workspace, acceptance);
-            if (budgetPolicy.exceeded(budget, run.snapshot())) {
-                listener.onStatus("已达成本/Token 预算上限，停止自检修复（已交付当前最优版本）");
-                break;
-            }
-        }
-
+        int healAttempts = qualityGate.heal(listener, run, gen.genRoute(), gen.budget(),
+                gen.budgetDecision(), prd, workspace, gen.tools(), acceptance, issues);
         boolean recovered = issues.isEmpty();
         if (!recovered) {
             listener.onStatus("还有 " + issues.size() + " 处问题没能自动修好，页面可以打开，你可以继续告诉我哪里不对");
         }
 
-        // ============ 提交版本 ============
-        String summary = summarize(purpose, requirement, prd, recovered, healAttempts, request);
-        TokenMeter.Snapshot snapshot = run.snapshot();
-        project = projectService.saveVersion(project, workspace.snapshot(), summary, requirement,
-                healAttempts, snapshot.cost(), snapshot.inputTokens(), snapshot.outputTokens(),
-                generateCall.response().model(), generateCall.tier().label());
-
-        // ============ 沙箱预览 ============
-        SandboxedPreview preview = sandbox.prepare(workspace.mainContent(), project.id(),
-                project.currentVersionId());
-
-        // 实际注入量按真正发出去的提示词算，不做美化
-        ContextAssembler.ContextReport contextReport = ContextAssembler.report(
-                TokenEstimator.estimate(userPrompt), rawContextTokens);
-        UsageView usageView = usage(run, generateCall, genRoute,
-                contextReport.injectedTokens(), contextReport.rawTokens());
-
-        listener.onTokens(usageView);
-        listener.onResult(new AgentResult(
-                project.id(),
-                project.currentVersionId(),
-                project.currentVersion() == null ? "" : project.currentVersion().label(),
-                summary,
-                workspace.snapshot(),
-                preview.html(),
-                preview.mode(),
-                preview.note(),
-                healAttempts,
-                recovered,
-                generateCall.response().model(),
-                generateCall.tier().label(),
-                tools.trace(),
-                // 质检报告按最终交付的内容生成，而不是按中间某次尝试；
-                // C4 验收断言的核对结果一并进入报告（前端质检面板直接渲染）
-                qualityReport(workspace.mainContent(), acceptance, semanticScorer),
-                usageView));
+        // ============ 提交版本 + 沙箱预览 + 用量台账 ============
+        DeliveryFlow.Delivery delivery = deliveryFlow.deliver(request, listener, run, project,
+                purpose, requirement, prd, gen, workspace, healAttempts, recovered, acceptance);
+        listener.onResult(delivery.result());
     }
 
-    /** 质检报告 = 固定四维检查 + 验收断言逐条结果（C4/C-A） */
-    private List<HtmlValidator.CheckResult> qualityReport(String html, AcceptanceSpec acceptance,
-                                                          SemanticScorer scorer) {
-        List<HtmlValidator.CheckResult> report = new ArrayList<>(HtmlValidator.report(html));
-        report.addAll(AcceptanceEvaluator.evaluate(html, acceptance, scorer));
-        return List.copyOf(report);
-    }
-
-    /**
-     * 判断用户是不是在重新描述一个完整的应用。
-     *
-     * <p>信号很朴素：已有的项目里，用户又说了一句"做一个XX / 写一个XX"。
-     * 这类句子的语义是"我要的东西是 XX"，而不是"把这个页面改成 XX"。
-     * 把它和增量修改区分开，是保证多轮迭代不跑偏的关键一步。
-     */
-    private boolean isRebuildIntent(String requirement) {
-        if (requirement == null || requirement.isBlank()) {
-            return false;
-        }
-        String text = requirement.trim();
-        for (String prefix : REBUILD_PREFIXES) {
-            if (text.startsWith(prefix)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static final List<String> REBUILD_PREFIXES = List.of(
-            "做一个", "做个", "写一个", "写个", "设计一个", "设计个", "生成一个", "生成个",
-            "创建一个", "创建个", "帮我做一个", "帮我写一个", "重新做", "重新生成", "换成做一个");
-
-    private List<HtmlValidator.Issue> validate(ToolRegistry tools, AgentListener listener, AgentWorkspace workspace,
-                                               AcceptanceSpec acceptance) {
-        Map<String, Object> args = Map.of("path", MAIN_FILE);
-        String result = tools.call("validate_html", args);
-        listener.onToolCall("validate_html", args, result);
-        List<HtmlValidator.Issue> issues = new ArrayList<>(HtmlValidator.validate(workspace.read(MAIN_FILE)));
-
-        // 执行级验证：把生成的页面真在浏览器里跑一遍，把"能预览"变成"跑得过验收"。
-        // 运行时问题合并进同一份清单，复用已有的"回注 → 修复 → 重验"闭环；
-        // 环境无浏览器时 verify 回 skipped 报告，不阻断交付，行为与改造前一致（仅静态校验）。
-        if (runtimePolicy.enabled()) {
-            RuntimeReport report = runtimeVerifier.verify(workspace.mainContent(), runtimePolicy.defaultSpec());
-            listener.onToolCall("verify_runtime", Map.of("path", MAIN_FILE), report.summary());
-            if (report.skipped()) {
-                listener.onStatus("运行时验证不可用，已跳过，仅做静态校验");
-            }
-            issues.addAll(runtimePolicy.merge(List.of(), report));
-        }
-
-        // C4 验收断言：从需求推导的"完成判据"，逐条客观核对；未通过的并入问题清单，
-        // 走同一条"回注 → 修复 → 重验"闭环——生成是否完成由断言说了算，而不是由模型自己说了算。
-        if (acceptance != null && !acceptance.isEmpty()) {
-            Map<String, Object> accArgs = Map.of("checks", acceptance.checks().size());
-            List<HtmlValidator.CheckResult> accResults =
-                    AcceptanceEvaluator.evaluate(workspace.read(MAIN_FILE), acceptance, semanticScorer);
-            long passed = accResults.stream().filter(HtmlValidator.CheckResult::passed).count();
-            listener.onToolCall("verify_acceptance", accArgs,
-                    "验收断言 " + passed + "/" + accResults.size() + " 通过");
-            issues.addAll(AcceptanceEvaluator.failing(accResults));
-        }
-        return issues;
-    }
-
-    private String buildUserPrompt(LlmPurpose purpose,
-                                   String prd,
-                                   String requirement,
-                                   AgentWorkspace workspace,
-                                   ContextAssembler.Selection selection,
-                                   AgentRunRequest request,
-                                   Project project) {
-        return switch (purpose) {
-            case CODE -> PromptLibrary.codeUserPrompt(prd, requirement);
-            case MODIFY -> PromptLibrary.modifyUserPrompt(prd, requirement, selection.files(),
-                    workspace.historySummary(project.versions()), selection.truncationNote());
-            default -> PromptLibrary.fixUserPrompt(prd, selection.files(), describeRuntimeErrors(request));
-        };
-    }
-
-    /** 运行时报错在提示词里的呈现形式。 */
-    private String describeRuntimeErrors(AgentRunRequest request) {
-        if (request.errors() == null || request.errors().isEmpty()) {
-            return "页面在浏览器中运行时报错，具体信息未知，请检查脚本中可能中断执行的地方。";
-        }
-        StringBuilder sb = new StringBuilder();
-        for (AgentRunRequest.RuntimeError error : request.errors()) {
-            sb.append("- ").append(error.message());
-            if (error.line() > 0) {
-                sb.append("（").append(error.source()).append(" 第 ").append(error.line()).append(" 行）");
-            }
-            sb.append('\n');
-            if (error.stack() != null && !error.stack().isBlank()) {
-                String stack = error.stack();
-                sb.append("  调用栈：")
-                        .append(stack.length() > 400 ? stack.substring(0, 400) + "…" : stack)
-                        .append('\n');
-            }
-        }
-        return sb.toString().trim();
-    }
-
-    /**
-     * 估算"完全不做上下文压缩"时这一轮要喂给模型的全部内容，用来量化上下文工程的收益。
-     *
-     * <p>口径：历史每一轮的<b>需求原文</b> + 历史每一轮的<b>模型输出（完整代码）</b> + 本轮需求。
-     * 与之对比的是实际注入量（结构化 PRD + 变更摘要 + 本轮相关文件 + 本轮需求）。
-     * 首轮没有历史可压缩，比例天然为 0；从第二轮起差距随轮次线性拉大——
-     * 这正是多轮迭代不做上下文管理会失控的原因。
-     */
-    private int rawContextTokens(Project project, String requirement) {
-        int raw = TokenEstimator.estimate(requirement);
-        if (project.versions() != null) {
-            for (VersionSnapshot version : project.versions()) {
-                raw += TokenEstimator.estimate(version.requirement());
-                if (version.files() == null) {
-                    continue;
-                }
-                for (ProjectFile file : version.files()) {
-                    raw += TokenEstimator.estimate(file.content());
-                }
-            }
-        }
-        return raw;
-    }
-
-    private UsageView usage(TokenMeter.RunMeter run,
-                            LlmGateway.CallResult call,
-                            RouteDecision route,
-                            int injectedTokens,
-                            int rawTokens) {
-        TokenMeter.Snapshot runTotal = run.snapshot();
-        TokenMeter.Snapshot global = meter.globalSnapshot();
-        ContextAssembler.ContextReport report = ContextAssembler.report(injectedTokens, rawTokens);
-        return new UsageView(
-                call.response().inputTokens(),
-                call.response().outputTokens(),
-                runTotal.cost(),
-                runTotal.baselineCost(),
-                TokenMeter.savedPercent(runTotal.cost(), runTotal.baselineCost()),
-                global.cost(),
-                global.baselineCost(),
-                TokenMeter.savedPercent(global.cost(), global.baselineCost()),
-                call.tier().name(),
-                call.response().model(),
-                call.provider(),
-                call.degraded(),
-                route.reason(),
-                report.injectedTokens(),
-                report.rawTokens(),
-                report.savedPercent());
-    }
-
-    private String summarize(LlmPurpose purpose,
-                             String requirement,
-                             String prd,
-                             boolean recovered,
-                             int healAttempts,
-                             AgentRunRequest request) {
-        String core = "";
-        for (String line : prd.split("\n")) {
-            if (line.startsWith("核心能力")) {
-                core = line.replace("核心能力：", "").trim();
-                break;
-            }
-        }
-        String base = switch (purpose) {
-            case CODE -> core.isEmpty() ? "已完成首版生成" : "已生成初版：包含 " + core;
-            case MODIFY -> "已按需求调整：" + brief(requirement, 40);
-            case FIX -> "已自动修复运行时报错：" + brief(firstRuntimeError(request), 60);
-            default -> "已完成";
-        };
-        if (healAttempts > 0) {
-            base = base + "；静态校验触发 " + healAttempts + " 次修复" + (recovered ? "后通过" : "后仍有残留问题");
-        }
-        return base;
-    }
-
-    private String firstRuntimeError(AgentRunRequest request) {
-        if (request.errors() == null || request.errors().isEmpty()) {
-            return "页面运行时报错";
-        }
-        return request.errors().get(0).message();
-    }
-
-    private String brief(String text, int max) {
-        if (text == null) {
-            return "";
-        }
-        String single = text.replace('\n', ' ').trim();
-        return single.length() > max ? single.substring(0, max) + "…" : single;
-    }
-
-    private int byteLengthOf(String text) {
-        return text == null ? 0 : text.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
-    }
-
-    private String safe(String text) {
-        return text == null ? "" : text.trim();
-    }
     /**
      * 客户端已断开（公开给控制器识别）：属于正常终止，不该按错误上报。
      */
@@ -758,10 +187,13 @@ public class AgentOrchestrator {
         }
     }
 
-    private static void checkCancelled(AgentListener listener) {
+    public static void checkCancelled(AgentListener listener) {
         if (listener.isCancelled()) {
             throw new CancelledException();
         }
     }
 
+    private static String safe(String text) {
+        return text == null ? "" : text.trim();
+    }
 }
