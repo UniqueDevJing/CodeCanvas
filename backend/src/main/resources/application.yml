@@ -63,43 +63,8 @@ codecanvas:
   llm:
     # auto=有密钥用真实模型，否则退回离线引擎；real=强制真实；mock=强制离线
     mode: ${CODECANVAS_LLM_MODE:auto}
-  runtime-verify:
-    # C1 执行级验证闭环：把生成的页面放进无头浏览器真跑一遍（加载/点按钮/断言/截图），
-    # 失败信息结构化回注到自检修复闭环。无 Playwright 时自动降级为仅静态校验，不影响交付。
-    enabled: ${CODECANVAS_RUNTIME_VERIFY_ENABLED:true}
-    # Node 运行时命令（需能解析到 playwright）
-    node-command: ${CODECANVAS_RUNTIME_VERIFY_NODE:node}
-    # 验证脚本相对路径，找不到时会在工作目录逐级向上回退查找 tools/runtime-verify.mjs
-    node-script: ${CODECANVAS_RUNTIME_VERIFY_SCRIPT:tools/runtime-verify.mjs}
-    # 是否自动点一次主按钮并观察是否抛异常
-    click-main-button: ${CODECANVAS_RUNTIME_VERIFY_CLICK:true}
-    # 单次验证整体超时（毫秒），超时则降级为仅静态校验（Java 侧杀进程的兜底上限）
-    timeout-ms: ${CODECANVAS_RUNTIME_VERIFY_TIMEOUT:15000}
-    # 浏览器内等待 DOM 稳定的时间（毫秒）。⚠️ 这不是 timeout-ms：
-    # 以前误把 15000 的进程超时当 settle 传给 Node 脚本，每次验证白等 15 秒。
-    settle-ms: ${CODECANVAS_RUNTIME_VERIFY_SETTLE:300}
-  acceptance:
-    # C4 验收断言：从 PRD 自动生成 3 条断言作为"生成完成"的客观判据，
-    # 未通过的断言并入自检修复闭环（回注 → 修复 → 重验）。
-    enabled: ${CODECANVAS_ACCEPTANCE_ENABLED:true}
-    # C-A 语义档：kind=semantic 的断言按"断言描述 vs 页面可见文本"嵌入相似度判定。
-    # 默认关闭（未配置打分器时语义断言诚实降级为不纳入判据，绝不假装通过）。
-    semantic-enabled: ${CODECANVAS_ACCEPTANCE_SEMANTIC:false}
-    semantic-model: ${CODECANVAS_ACCEPTANCE_SEMANTIC_MODEL:text-embedding-v3}
-  react:
-    # C5 真 ReAct 分支：请求带 strategy=react 时走模型自主循环（自己决定调用什么工具），
-    # 与固定流水线做 A/B 对照。三重终止：max-steps / 预算耗尽 / 校验通过。
-    # 自主循环产不出页面时自动退回流水线兜底，不影响交付。
-    max-steps: ${CODECANVAS_REACT_MAX_STEPS:10}
-  budget:
-    # C2 预算感知调度：把 TokenMeter 的事后计量升级为准入控制。
-    # 每任务可经 AgentRunRequest.budget 下发三元预算；此处为"启用时的默认预算"（全 0 = 不预设，按请求下发）。
-    enabled: ${CODECANVAS_BUDGET_ENABLED:true}
-    default-max-cost-yuan: ${CODECANVAS_BUDGET_MAX_COST:0}
-    default-max-latency-ms: ${CODECANVAS_BUDGET_MAX_LATENCY:0}
-    default-max-tokens: ${CODECANVAS_BUDGET_MAX_TOKENS:0}
-    # 无预算时仍允许的最大自检修复轮次（与改造前一致）
-    max-heal-attempts: ${CODECANVAS_BUDGET_MAX_HEAL:3}
+    # 2026-11-10 fix: these keys were nested under codecanvas.budget by a bad indent;
+    # LlmProperties (prefix codecanvas.llm) then never bound the API key -> forced MOCK mode.
     # openai=OpenAI 兼容协议（DeepSeek / GLM / 通义 / 硅基流动等）；anthropic=Anthropic 协议
     active-provider: ${CODECANVAS_PROVIDER:openai}
     openai:
@@ -150,6 +115,43 @@ codecanvas:
       baseline-input: 0.004
       baseline-output: 0.016
       baseline-note: qwen3-coder-plus（改造前挂在标准档的模型）
+  runtime-verify:
+    # C1 执行级验证闭环：把生成的页面放进无头浏览器真跑一遍（加载/点按钮/断言/截图），
+    # 失败信息结构化回注到自检修复闭环。无 Playwright 时自动降级为仅静态校验，不影响交付。
+    enabled: ${CODECANVAS_RUNTIME_VERIFY_ENABLED:true}
+    # Node 运行时命令（需能解析到 playwright）
+    node-command: ${CODECANVAS_RUNTIME_VERIFY_NODE:node}
+    # 验证脚本相对路径，找不到时会在工作目录逐级向上回退查找 tools/runtime-verify.mjs
+    node-script: ${CODECANVAS_RUNTIME_VERIFY_SCRIPT:tools/runtime-verify.mjs}
+    # 是否自动点一次主按钮并观察是否抛异常
+    click-main-button: ${CODECANVAS_RUNTIME_VERIFY_CLICK:true}
+    # 单次验证整体超时（毫秒），超时则降级为仅静态校验（Java 侧杀进程的兜底上限）
+    timeout-ms: ${CODECANVAS_RUNTIME_VERIFY_TIMEOUT:15000}
+    # 浏览器内等待 DOM 稳定的时间（毫秒）。⚠️ 这不是 timeout-ms：
+    # 以前误把 15000 的进程超时当 settle 传给 Node 脚本，每次验证白等 15 秒。
+    settle-ms: ${CODECANVAS_RUNTIME_VERIFY_SETTLE:300}
+  acceptance:
+    # C4 验收断言：从 PRD 自动生成 3 条断言作为"生成完成"的客观判据，
+    # 未通过的断言并入自检修复闭环（回注 → 修复 → 重验）。
+    enabled: ${CODECANVAS_ACCEPTANCE_ENABLED:true}
+    # C-A 语义档：kind=semantic 的断言按"断言描述 vs 页面可见文本"嵌入相似度判定。
+    # 默认关闭（未配置打分器时语义断言诚实降级为不纳入判据，绝不假装通过）。
+    semantic-enabled: ${CODECANVAS_ACCEPTANCE_SEMANTIC:false}
+    semantic-model: ${CODECANVAS_ACCEPTANCE_SEMANTIC_MODEL:text-embedding-v3}
+  react:
+    # C5 真 ReAct 分支：请求带 strategy=react 时走模型自主循环（自己决定调用什么工具），
+    # 与固定流水线做 A/B 对照。三重终止：max-steps / 预算耗尽 / 校验通过。
+    # 自主循环产不出页面时自动退回流水线兜底，不影响交付。
+    max-steps: ${CODECANVAS_REACT_MAX_STEPS:10}
+  budget:
+    # C2 预算感知调度：把 TokenMeter 的事后计量升级为准入控制。
+    # 每任务可经 AgentRunRequest.budget 下发三元预算；此处为"启用时的默认预算"（全 0 = 不预设，按请求下发）。
+    enabled: ${CODECANVAS_BUDGET_ENABLED:true}
+    default-max-cost-yuan: ${CODECANVAS_BUDGET_MAX_COST:0}
+    default-max-latency-ms: ${CODECANVAS_BUDGET_MAX_LATENCY:0}
+    default-max-tokens: ${CODECANVAS_BUDGET_MAX_TOKENS:0}
+    # 无预算时仍允许的最大自检修复轮次（与改造前一致）
+    max-heal-attempts: ${CODECANVAS_BUDGET_MAX_HEAL:3}
 
 logging:
   charset:

@@ -221,6 +221,10 @@ location $WEB_PREFIX/ {
 $AUTH_BLOCK
     root /var/www;
     index index.html;
+    # index.html 不带内容指纹，必须每次回源校验：否则浏览器按 Last-Modified 做启发式缓存，
+    # 会一直加载旧入口 → 旧 hash 的 JS（旧包可能没注入 X-API-Key），
+    # 表现为「界面和以前一模一样 / 点了生成没反应」。带 hash 的 assets 仍然长缓存。
+    add_header Cache-Control "no-cache, must-revalidate" always;
     # SPA：找不到的路径都交给前端路由
     try_files \$uri \$uri/ $WEB_PREFIX/index.html;
 }
@@ -306,9 +310,15 @@ log "nginx 已重载"
 log "启动后端服务"
 systemctl restart codecanvas
 
+# 后端是 fail-closed 的：/api/config 也要带 X-API-Key，否则 401 会让探活白等 120 秒并误报"未就绪"。
+# 从刚安装好的 .env 里取，不额外引入部署参数；权限 600，脚本以 root 运行。
+CC_API_KEY="$(sed -n 's/^CODECANVAS_API_KEY=//p' "$APP_DIR/.env" | head -1 | tr -d '\r')"
+CC_KEY_HEADER=()
+[ -n "$CC_API_KEY" ] && CC_KEY_HEADER=(-H "X-API-Key: $CC_API_KEY")
+
 READY=0
 for i in $(seq 1 40); do
-  if curl -fsS --max-time 3 "http://127.0.0.1:$BACKEND_PORT/api/config" >/dev/null 2>&1; then
+  if curl -fsS --max-time 3 "${CC_KEY_HEADER[@]}" "http://127.0.0.1:$BACKEND_PORT/api/config" >/dev/null 2>&1; then
     READY=1
     break
   fi
@@ -330,14 +340,14 @@ if [ -n "$AUTH_PASS" ]; then
   curl -s -o /dev/null -w "HTTP %{http_code}（401 表示鉴权生效）\n" "http://127.0.0.1$WEB_PREFIX/"
 fi
 echo -n "  接口连通  : "
-curl -s "${CURL_AUTH[@]}" --max-time 8 "http://127.0.0.1$WEB_PREFIX/api/config" | head -c 200
+curl -s "${CURL_AUTH[@]}" "${CC_KEY_HEADER[@]}" --max-time 8 "http://127.0.0.1$WEB_PREFIX/api/config" | head -c 200
 echo
 
 if [ "$RATE_LIMIT" != "off" ]; then
   echo -n "  限流验证  : "
   LIMITED=0
   for _ in $(seq 1 12); do
-    CODE="$(curl -s -o /dev/null -w '%{http_code}' "${CURL_AUTH[@]}" --max-time 5 \
+    CODE="$(curl -s -o /dev/null -w '%{http_code}' "${CURL_AUTH[@]}" "${CC_KEY_HEADER[@]}" --max-time 5 \
       "http://127.0.0.1$WEB_PREFIX/api/config" || echo 000)"
     [ "$CODE" = "429" ] && LIMITED=$((LIMITED + 1))
   done
