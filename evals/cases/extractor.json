@@ -1,0 +1,12 @@
+[
+  {"id": "EX-01", "raw": null, "expectEquals": ""},
+  {"id": "EX-02", "raw": "   ", "expectEquals": ""},
+  {"id": "EX-03", "raw": "```html\n<html><body><p>内容</p></body></html>\n```", "expectStartsWith": "<html>", "expectContains": "</html>"},
+  {"id": "EX-04", "raw": "好的,这是你要的页面:\n<!DOCTYPE html>\n<html><body><p>内容</p></body></html>", "expectStartsWith": "<!DOCTYPE", "expectContains": "</html>"},
+  {"id": "EX-05", "raw": "<html><body><p>直接输出</p></body></html>", "expectEquals": "<html><body><p>直接输出</p></body></html>"},
+  {"id": "EX-06", "raw": "说明文字在前\n```html\n<html><body><h1>标题</h1></body></html>\n```\n说明文字在后", "expectStartsWith": "<html>", "expectContains": "</html>"},
+  {"id": "EX-07", "raw": "这段话里没有任何标记语言,纯文字描述", "expectEquals": "这段话里没有任何标记语言,纯文字描述"},
+  {"id": "EX-08", "raw": "寒暄开头 <html><body><p>正文</p></body></html>", "expectStartsWith": "<html>"},
+  {"id": "EX-09", "raw": "<html><body><p>正文</p></body></html> 尾部多余说明", "expectEquals": "<html><body><p>正文</p></body></html>"},
+  {"id": "EX-10", "raw": "```HTML\n<html><body><p>大写围栏</p></body></html>\n```", "expectStartsWith": "<html>"}
+]

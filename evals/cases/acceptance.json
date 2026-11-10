@@ -1,0 +1,17 @@
+[
+  {"id": "AC-01", "raw": "{\"checks\":[{\"id\":\"a1\",\"kind\":\"dom\",\"target\":\"<canvas>\",\"description\":\"页面包含画布\"},{\"id\":\"a2\",\"kind\":\"content\",\"target\":\"提交\",\"description\":\"包含提交按钮文案\"},{\"id\":\"a3\",\"kind\":\"dom\",\"target\":\"id=\\\"list\\\"\",\"description\":\"包含列表容器\"}]}", "expectChecks": 3, "expectViolations": 0},
+  {"id": "AC-02", "raw": "{\"checks\":[{\"id\":\"a1\",\"kind\":\"dom\",\"target\":\"t1\",\"description\":\"d1\"},{\"id\":\"a2\",\"kind\":\"dom\",\"target\":\"t2\",\"description\":\"d2\"},{\"id\":\"a3\",\"kind\":\"dom\",\"target\":\"t3\",\"description\":\"d3\"},{\"id\":\"a4\",\"kind\":\"dom\",\"target\":\"t4\",\"description\":\"d4\"},{\"id\":\"a5\",\"kind\":\"dom\",\"target\":\"t5\",\"description\":\"d5\"},{\"id\":\"a6\",\"kind\":\"dom\",\"target\":\"t6\",\"description\":\"d6\"}]}", "expectChecks": 5, "expectViolations": 0},
+  {"id": "AC-03", "raw": "{\"checks\":[{\"kind\":\"dom\",\"target\":\"<h1>\",\"description\":\"包含标题\"}]}", "expectChecks": 1, "expectViolations": 1},
+  {"id": "AC-04", "raw": "{\"checks\":[{\"id\":\"a1\",\"kind\":\"click\",\"target\":\"<button>\",\"description\":\"点击按钮\"}]}", "expectChecks": 1, "expectViolations": 1},
+  {"id": "AC-05", "raw": "{\"checks\":[{\"id\":\"a1\",\"kind\":\"dom\",\"description\":\"target 缺失\"}]}", "expectChecks": 0, "expectViolations": 1},
+  {"id": "AC-06", "raw": "这不是 JSON,是一段普通说明文字", "expectChecks": 0, "expectViolations": 2},
+  {"id": "AC-07", "raw": "", "expectChecks": 0, "expectViolations": 2},
+  {"id": "AC-08", "raw": "{\"checks\":{\"a1\":\"dom\"}}", "expectChecks": 0, "expectViolations": 1},
+  {"id": "AC-09", "raw": "模型先说了两句话 {\"checks\":[{\"id\":\"a1\",\"kind\":\"dom\",\"target\":\"<table>\",\"description\":\"包含表格\"},{\"id\":\"a2\",\"kind\":\"content\",\"target\":\"合计\",\"description\":\"包含合计文案\"}]} 然后又补了一句", "expectChecks": 2, "expectViolations": 0},
+  {"id": "AC-10", "raw": "{\"checks\":[{\"id\":\"a1\",\"kind\":\"content\",\"target\":\"价格\",\"description\":\"包含价格文案\"}]}", "expectChecks": 1, "expectViolations": 0},
+  {"id": "AC-11", "raw": "{\"checks\":[{\"id\":\"a1\",\"kind\":\"semantic\",\"target\":\"页面美观\",\"description\":\"语义断言\"}]}", "expectChecks": 1, "expectViolations": 0},
+  {"id": "AC-12", "raw": "{\"checks\":[{\"id\":\"a1\",\"kind\":\"dom\",\"target\":\"t1\",\"description\":\"d1\"},{\"id\":\"a2\",\"kind\":\"dom\",\"target\":\"t2\",\"description\":\"d2\"},{\"id\":\"a3\",\"kind\":\"dom\",\"target\":\"t3\",\"description\":\"d3\"},{\"id\":\"a4\",\"kind\":\"dom\",\"target\":\"t4\",\"description\":\"d4\"},{\"id\":\"a5\",\"kind\":\"dom\",\"target\":\"t5\",\"description\":\"d5\"}]}", "expectChecks": 5, "expectViolations": 0},
+  {"id": "AC-13", "raw": "{\"checks\":[{\"id\":\"a1\",\"kind\":\"dom\",\"target\":\"<p>\",\"description\":\"\"}]}", "expectChecks": 0, "expectViolations": 1},
+  {"id": "AC-14", "raw": "{\"checks\":[{\"id\":\"a1\",\"kind\":\"dom\",\"target\":\"<footer>\",\"description\":\"包含页脚\"}]}", "expectChecks": 1, "expectViolations": 0},
+  {"id": "AC-15", "raw": "{\"checks\":[{\"id\":\"a1\",\"kind\":\"behavior\",\"target\":\"点击后弹出提示\",\"description\":\"交互行为\"}]}", "expectChecks": 1, "expectViolations": 0}
+]

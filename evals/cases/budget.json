@@ -1,0 +1,12 @@
+[
+  {"id": "CB-01", "setup": {"maxHeal": 3}, "route": "FLAGSHIP", "budget": 0.2, "promptTokens": 10000, "plannedTokens": 8000, "expect": {"tier": "FLAGSHIP", "overBudget": false, "allowedHeal": 0}},
+  {"id": "CB-02", "setup": {"maxHeal": 3}, "route": "FLAGSHIP", "budget": 0.1, "promptTokens": 10000, "plannedTokens": 8000, "expect": {"tier": "STANDARD", "overBudget": false, "allowedHeal": 1}},
+  {"id": "CB-03", "setup": {"maxHeal": 3}, "route": "FLAGSHIP", "budget": 0.05, "promptTokens": 10000, "plannedTokens": 8000, "expect": {"tier": "STANDARD", "overBudget": false, "allowedHeal": 0}},
+  {"id": "CB-04", "setup": {"maxHeal": 3}, "route": "FLAGSHIP", "budget": 0.02, "promptTokens": 10000, "plannedTokens": 8000, "expect": {"tier": "LIGHT", "overBudget": true, "allowedHeal": 0}},
+  {"id": "CB-05", "setup": {"maxHeal": 3}, "route": "FLAGSHIP", "budget": 0.01, "promptTokens": 10000, "plannedTokens": 8000, "expect": {"tier": "LIGHT", "overBudget": true, "allowedHeal": 0}},
+  {"id": "CB-06", "setup": {"maxHeal": 3}, "route": "FLAGSHIP", "budget": 0.168, "promptTokens": 10000, "plannedTokens": 8000, "expect": {"tier": "FLAGSHIP", "overBudget": false, "allowedHeal": 0}},
+  {"id": "CB-07", "setup": {"maxHeal": 2}, "route": "FLAGSHIP", "budget": 0.42, "promptTokens": 10000, "plannedTokens": 8000, "expect": {"tier": "FLAGSHIP", "overBudget": false, "allowedHeal": 1}},
+  {"id": "CB-08", "setup": {"maxHeal": 3}, "route": "FLAGSHIP", "budget": 0.6, "promptTokens": 10000, "plannedTokens": 8000, "expect": {"tier": "FLAGSHIP", "overBudget": false, "allowedHeal": 2}},
+  {"id": "CB-09", "setup": {"maxHeal": 3}, "route": "FLAGSHIP", "budget": 1.0, "promptTokens": 10000, "plannedTokens": 8000, "expect": {"tier": "FLAGSHIP", "overBudget": false, "allowedHeal": 3}},
+  {"id": "CB-10", "setup": {"maxHeal": 3}, "route": "FLAGSHIP", "budget": null, "promptTokens": 10000, "plannedTokens": 8000, "expect": {"tier": "FLAGSHIP", "overBudget": false, "allowedHeal": 3}}
+]

@@ -1,0 +1,57 @@
+{
+  "timestamp" : "2026-11-10T10:44:53.7980642",
+  "total" : 100,
+  "passed" : 98,
+  "failed" : 2,
+  "passRate" : "98.0%",
+  "harnessP50us" : 91,
+  "harnessP95us" : 4254,
+  "byCategory" : [ {
+    "category" : "routing",
+    "passed" : 30,
+    "failed" : 0,
+    "total" : 30,
+    "passRate" : "100.0%"
+  }, {
+    "category" : "validator",
+    "passed" : 28,
+    "failed" : 2,
+    "total" : 30,
+    "passRate" : "93.3%"
+  }, {
+    "category" : "extractor",
+    "passed" : 10,
+    "failed" : 0,
+    "total" : 10,
+    "passRate" : "100.0%"
+  }, {
+    "category" : "tokens",
+    "passed" : 5,
+    "failed" : 0,
+    "total" : 5,
+    "passRate" : "100.0%"
+  }, {
+    "category" : "acceptance",
+    "passed" : 15,
+    "failed" : 0,
+    "total" : 15,
+    "passRate" : "100.0%"
+  }, {
+    "category" : "budget",
+    "passed" : 10,
+    "failed" : 0,
+    "total" : 10,
+    "passRate" : "100.0%"
+  } ],
+  "failedCases" : [ {
+    "id" : "VD-05",
+    "category" : "validator",
+    "expected" : "[STRUCTURE]",
+    "actual" : "[STRUCTURE, TAG]"
+  }, {
+    "id" : "VD-07",
+    "category" : "validator",
+    "expected" : "[STRUCTURE]",
+    "actual" : "[STRUCTURE, STRUCTURE]"
+  } ]
+}
