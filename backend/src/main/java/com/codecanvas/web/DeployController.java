@@ -90,7 +90,9 @@ public class DeployController {
                         // 应用可能被反复迭代，不能让浏览器或 CDN 缓存住旧版本
                         .cacheControl(CacheControl.noStore())
                         .contentType(new MediaType(MediaType.TEXT_HTML, StandardCharsets.UTF_8))
-                        .body(project.mainFileContent()))
+                        // C3：发布页同样走内联装配，多文件项目的相对引用在公开链接下也能加载
+                        .body(com.codecanvas.common.PreviewAssembler.assemble(
+                                "index.html", project.files())))
                 .orElseGet(() -> ResponseEntity.status(404)
                         .contentType(new MediaType(MediaType.TEXT_HTML, StandardCharsets.UTF_8))
                         .body(notFoundPage()));

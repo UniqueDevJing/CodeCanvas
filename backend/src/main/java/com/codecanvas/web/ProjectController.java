@@ -75,7 +75,8 @@ public class ProjectController {
                 .toList();
         SandboxedPreview preview = project.isEmpty()
                 ? new SandboxedPreview("", sandbox.id(), "")
-                : sandbox.prepare(project.mainFileContent(), project.id(), project.currentVersionId());
+                // C3：多文件项目预览先内联相对引用，再进沙箱
+                : sandbox.prepare(previewSource(project), project.id(), project.currentVersionId());
         return new ProjectDtos.ProjectDetail(
                 project.id(),
                 project.name(),
@@ -87,6 +88,12 @@ public class ProjectController {
                 project.deployed(),
                 project.deployKey(),
                 project.deployedAt());
+    }
+
+    /** C3：预览源 = 入口文件 + 项目内相对引用内联；单文件项目行为不变。 */
+    private String previewSource(Project project) {
+        return com.codecanvas.common.PreviewAssembler.assemble(
+                "index.html", project.files());
     }
 
     @GetMapping("/{id}/versions")

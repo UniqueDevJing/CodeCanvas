@@ -47,4 +47,25 @@ public final class CodeExtractor {
         }
         return text;
     }
+
+    /**
+     * 提取任意代码文件内容（C3 多文件逐文件生成用）：
+     * 优先取代码围栏（```css / ```js / ```jsx / ```html 等任意语言标注），
+     * 无围栏时原文返回（非 HTML 文件没有稳定的文档标记可截）。
+     */
+    public static String extractCode(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return "";
+        }
+        String text = raw.trim();
+        Pattern anyFence = Pattern.compile("```[a-zA-Z]*\\s*([\\s\\S]*?)```", Pattern.MULTILINE);
+        Matcher fenced = anyFence.matcher(text);
+        if (fenced.find()) {
+            String inner = fenced.group(1).trim();
+            if (!inner.isEmpty()) {
+                return inner;
+            }
+        }
+        return text;
+    }
 }

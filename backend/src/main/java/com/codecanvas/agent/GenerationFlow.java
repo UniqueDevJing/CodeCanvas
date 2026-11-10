@@ -37,6 +37,7 @@ public class GenerationFlow {
     private final LlmGateway gateway;
     private final ContextAssembler contextAssembler;
     private final BudgetPolicy budgetPolicy;
+    private final MultiFileGeneration multiFileGeneration;
 
     /** C5：ReAct 自主循环的步数上限（三重终止条件之一） */
     @Value("${codecanvas.react.max-steps:10}")
@@ -46,10 +47,12 @@ public class GenerationFlow {
     @Autowired(required = false)
     private McpClientBridge mcpClientBridge;
 
-    public GenerationFlow(LlmGateway gateway, ContextAssembler contextAssembler, BudgetPolicy budgetPolicy) {
+    public GenerationFlow(LlmGateway gateway, ContextAssembler contextAssembler,
+                          BudgetPolicy budgetPolicy, MultiFileGeneration multiFileGeneration) {
         this.gateway = gateway;
         this.contextAssembler = contextAssembler;
         this.budgetPolicy = budgetPolicy;
+        this.multiFileGeneration = multiFileGeneration;
     }
 
     /** 生成阶段产物（供校验/自检修复/交付阶段继续消费） */
@@ -153,7 +156,27 @@ public class GenerationFlow {
         }
 
         if (generateCall == null || workspace.read(MAIN_FILE).isBlank()) {
-            // 流水线路径（默认；也是 REACT 产不出内容时的兜底）
+            // C3 多文件路径：首轮 CODE 先规划再逐文件生成；增量 MODIFY 先试变更集。
+            // 任何一步降级（返回 null）都落到下方单文件流水线。
+            if (purpose == LlmPurpose.CODE) {
+                MultiFileGeneration.PlanOutcome multi = multiFileGeneration.generateByPlan(
+                        project, prd, requirement, genRoute, budget, workspace, listener, run);
+                if (multi != null) {
+                    listener.onStatus("多文件项目已生成（" + multi.fileCount() + " 个文件）");
+                    return new Outcome(genRoute, multi.entryCall(), workspace, tools, userPrompt,
+                            rawContextTokens, budget, budgetDecision);
+                }
+            } else if (purpose == LlmPurpose.MODIFY) {
+                MultiFileGeneration.ModifyOutcome modify = multiFileGeneration.modifyByChangeSet(
+                        project, prd, requirement, genRoute, workspace, listener, run,
+                        workspace.historySummary(project.versions()));
+                if (modify != null) {
+                    return new Outcome(genRoute, modify.call(), workspace, tools, userPrompt,
+                            rawContextTokens, budget, budgetDecision);
+                }
+            }
+
+            // 流水线路径（默认；也是 REACT/多文件产不出内容时的兜底）
             LlmGateway.CallResult pipelineCall = gateway.callStreaming(
                     new LlmRequest(purpose, genRoute.model(), systemPrompt, userPrompt, 0.3, 8192),
                     genRoute,

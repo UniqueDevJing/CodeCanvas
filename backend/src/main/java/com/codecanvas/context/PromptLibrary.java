@@ -1,6 +1,7 @@
 package com.codecanvas.context;
 
 import com.codecanvas.project.ProjectFile;
+import com.codecanvas.project.model.ProjectPlan;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -182,6 +183,108 @@ public final class PromptLibrary {
                 %s
                 【当前代码结束】
                 """.formatted(prd, errorText, joinFiles(files));
+    }
+
+    // ==================== C3 多文件项目模型 ====================
+
+    public static final String PLAN_SYSTEM = """
+            你是一名资深前端架构师。请把用户需求拆解成一个小型前端项目的文件规划。
+
+            只输出 JSON（不要代码围栏、不要解释），格式：
+            {"appName":"应用名(<=16字)","summary":"一句话说明应用做什么","tech":"html 或 react","entry":"入口文件路径","files":[{"path":"文件相对路径","purpose":"这个文件负责什么"}]}
+
+            规划规则：
+            1. tech=html 时入口是 index.html，CSS/JS 可拆分文件（如 styles.css / app.js），
+               index.html 用相对路径引用它们；不用构建步骤。
+            2. tech=react 时必须是无构建方案：index.html 通过 CDN 引入 React、ReactDOM 和 Babel，
+               业务代码放在 .jsx 文件里并由 index.html 用 <script type="text/babel" src="..."> 引入；
+               数据文件用 .js（Babel 不编译普通 script src）。
+            3. 文件数量 2 到 8 个，每个文件职责单一、用途明确，不要为拆而拆。
+            4. 文件路径用相对路径、正斜杠，不允许出现 node_modules、src/main.jsx 这类需要构建才能运行的入口。
+            """;
+
+    /** 生成规划的用户提示词。 */
+    public static String planUserPrompt(String prd, String requirement) {
+        return """
+                【结构化需求】
+                %s
+
+                【原始需求】
+                %s
+                """.formatted(prd, requirement);
+    }
+
+    /** 生成单个文件的用户提示词（按规划逐文件生成）。 */
+    public static String planFileUserPrompt(ProjectPlan plan, ProjectPlan.PlanFile target,
+                                            List<String> alreadyWritten) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("【项目规划】\n应用：").append(plan.appName())
+                .append("\n说明：").append(plan.summary())
+                .append("\n技术形态：").append(plan.tech())
+                .append("\n入口文件：").append(plan.entry()).append('\n');
+        sb.append("\n【文件清单】\n");
+        for (ProjectPlan.PlanFile f : plan.files()) {
+            String mark = f.path().equals(target.path()) ? "（本任务要生成的文件）" : "";
+            sb.append("- ").append(f.path()).append("：").append(f.purpose()).append(mark).append('\n');
+        }
+        if (!alreadyWritten.isEmpty()) {
+            sb.append("\n【已生成的文件】").append(String.join("、", alreadyWritten))
+                    .append("\n引用这些文件时必须使用与清单一致的相对路径。\n");
+        }
+        sb.append("\n【本任务】\n只生成文件 ").append(target.path())
+                .append("（").append(target.purpose()).append("）。");
+        if (!plan.entry().equals(target.path())) {
+            sb.append("该文件不是入口文件，不要输出 <!DOCTYPE html> 外壳");
+            if (plan.isReact()) {
+                sb.append("，不要引入 CDN 资源，React 组件用全局变量 React/ReactDOM（入口文件已加载）");
+            } else {
+                sb.append("，只输出该文件本身的完整内容");
+            }
+        } else {
+            sb.append("这是入口文件，必须是完整可运行的页面");
+            if (plan.isReact()) {
+                sb.append("，通过 CDN 引入 react/react-dom/babel-standalone，并用 type=\"text/babel\" 的相对路径 script 引入清单里的全部 .jsx 文件");
+            } else {
+                sb.append("，用相对路径引入清单里的其余文件");
+            }
+        }
+        sb.append("。只输出该文件的完整代码内容，不要代码围栏，不要解释文字。");
+        return sb.toString();
+    }
+
+    public static final String MULTI_FILE_MODIFY_SYSTEM = """
+            你是一名资深前端工程师，正在对已有的多文件网页项目做增量修改。
+
+            硬性约束：
+            1. 只输出一个 JSON 对象（不要代码围栏、不要解释文字），格式：
+               {"summary":"本轮改了什么(<=50字)","changes":[{"path":"文件路径","action":"CREATE 或 UPDATE 或 DELETE","content":"文件完整内容，DELETE 时省略"}]}
+            2. 只提交与本次需求相关的文件：改了哪个文件就提交哪个，未改动的文件不要出现。
+            3. content 必须是该文件的完整内容，不允许省略或占位。
+            4. 新增文件用 CREATE，删除文件用 DELETE（content 省略），修改用 UPDATE。
+            5. 必须保留已有功能，只做与需求相关的最小改动。
+            """;
+
+    /** 多文件增量修改的用户提示词。 */
+    public static String multiFileModifyUserPrompt(String prd,
+                                                   String requirement,
+                                                   List<ProjectFile> files,
+                                                   String changeSummary) {
+        return """
+                【结构化需求】
+                %s
+
+                【历史变更摘要】
+                %s
+
+                【本次修改需求】
+                %s
+
+                【当前项目全部文件开始】
+                %s
+                【当前项目全部文件结束】
+
+                请按系统提示词的 JSON 格式输出本轮变更。
+                """.formatted(prd, changeSummary, requirement, joinFiles(files));
     }
 
     /** 多文件时按路径分节拼装，便于模型定位。 */

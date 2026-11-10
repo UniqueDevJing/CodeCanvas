@@ -81,6 +81,19 @@ public class AgentWorkspace {
         return files.get(path);
     }
 
+    /**
+     * 删除文件（C3 多文件变更集用）。路径校验同 {@link #write}；
+     * 删除已登记的变更记录里不保留（文件不在快照中即视为删除）。
+     */
+    public void delete(String path) {
+        String invalid = checkPath(path);
+        if (invalid != null) {
+            throw new IllegalArgumentException("非法文件路径（" + invalid + "）: " + path);
+        }
+        files.remove(path);
+        changed.remove(path);
+    }
+
     public boolean isEmpty() {
         return files.isEmpty();
     }
@@ -99,13 +112,23 @@ public class AgentWorkspace {
         return result;
     }
 
-    /** 主文件内容，用于预览与校验。 */
+    /** 主文件内容，用于预览与校验；多文件时优先返回入口 index.html（C3）。 */
     public String mainContent() {
-        return files.isEmpty() ? "" : files.values().iterator().next();
+        if (files.isEmpty()) {
+            return "";
+        }
+        String entry = files.get("index.html");
+        if (entry != null) {
+            return entry;
+        }
+        return files.values().iterator().next();
     }
 
     public String mainPath() {
-        return files.isEmpty() ? "index.html" : files.keySet().iterator().next();
+        if (files.isEmpty()) {
+            return "index.html";
+        }
+        return files.containsKey("index.html") ? "index.html" : files.keySet().iterator().next();
     }
 
     /** 逐行滚动历史摘要，作为多轮迭代的压缩上下文。 */

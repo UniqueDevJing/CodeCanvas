@@ -70,7 +70,10 @@ public class QualityGate {
         // 执行级验证：把生成的页面真在浏览器里跑一遍，把「能预览」变成「跑得过验收」。
         // 环境无浏览器时 verify 回 skipped 报告，不阻断交付，行为与改造前一致（仅静态校验）。
         if (runtimePolicy.enabled()) {
-            RuntimeReport report = runtimeVerifier.verify(workspace.mainContent(), runtimePolicy.defaultSpec());
+            // C3：多文件项目先内联相对引用再跑浏览器，运行时验证反映的是真实可运行状态
+            String runtimeHtml = com.codecanvas.common.PreviewAssembler.assemble(
+                    workspace.mainPath(), workspace.snapshot());
+            RuntimeReport report = runtimeVerifier.verify(runtimeHtml, runtimePolicy.defaultSpec());
             listener.onToolCall("verify_runtime", Map.of("path", GenerationFlow.MAIN_FILE), report.summary());
             if (report.skipped()) {
                 listener.onStatus("运行时验证不可用，已跳过，仅做静态校验");
