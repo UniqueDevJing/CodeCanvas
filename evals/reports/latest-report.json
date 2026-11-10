@@ -1,47 +1,47 @@
 {
-  "timestamp" : "2026-11-10T13:46:07.4234464",
+  "timestamp" : "2026-11-10T14:07:04.3188909",
   "total" : 100,
   "passed" : 100,
   "failed" : 0,
   "passRate" : "100.0%",
-  "harnessP50us" : 24,
-  "harnessP95us" : 329,
+  "harnessP50us" : 39,
+  "harnessP95us" : 599,
   "byCategory" : [ {
-    "passRate" : "100.0%",
-    "total" : 30,
-    "failed" : 0,
+    "category" : "routing",
     "passed" : 30,
-    "category" : "routing"
-  }, {
-    "passRate" : "100.0%",
+    "failed" : 0,
     "total" : 30,
-    "failed" : 0,
-    "passed" : 30,
-    "category" : "validator"
+    "passRate" : "100.0%"
   }, {
-    "passRate" : "100.0%",
-    "total" : 10,
+    "category" : "validator",
+    "passed" : 30,
     "failed" : 0,
+    "total" : 30,
+    "passRate" : "100.0%"
+  }, {
+    "category" : "extractor",
     "passed" : 10,
-    "category" : "extractor"
-  }, {
-    "passRate" : "100.0%",
-    "total" : 5,
     "failed" : 0,
+    "total" : 10,
+    "passRate" : "100.0%"
+  }, {
+    "category" : "tokens",
     "passed" : 5,
-    "category" : "tokens"
-  }, {
-    "passRate" : "100.0%",
-    "total" : 15,
     "failed" : 0,
+    "total" : 5,
+    "passRate" : "100.0%"
+  }, {
+    "category" : "acceptance",
     "passed" : 15,
-    "category" : "acceptance"
-  }, {
-    "passRate" : "100.0%",
-    "total" : 10,
     "failed" : 0,
+    "total" : 15,
+    "passRate" : "100.0%"
+  }, {
+    "category" : "budget",
     "passed" : 10,
-    "category" : "budget"
+    "failed" : 0,
+    "total" : 10,
+    "passRate" : "100.0%"
   } ],
   "failedCases" : [ ]
 }

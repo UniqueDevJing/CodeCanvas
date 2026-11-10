@@ -4,6 +4,7 @@ import type {
   KeyboardEvent as ReactKeyboardEvent,
   PointerEvent as ReactPointerEvent,
 } from 'react';
+import { AtelierBackdrop } from './components/AtelierBackdrop';
 import { ChatPanel } from './components/ChatPanel';
 import { DeployDialog } from './components/DeployDialog';
 import { GalleryView } from './components/GalleryView';
@@ -462,7 +463,8 @@ export default function App() {
   /* ---------------------------------- 渲染 --------------------------------- */
 
   return (
-    <div className="app">
+    <div className={`app${state.streaming ? ' is-generating' : ''}`}>
+      <AtelierBackdrop />
       <TopBar
         projectName={state.projectName}
         onRename={handleRename}

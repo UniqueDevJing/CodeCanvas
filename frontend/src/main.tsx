@@ -5,6 +5,8 @@ import './styles/theme.css';
 import './styles/polish.css';
 import './styles/layout.css';
 import './styles/mobile.css';
+/* 图纸工坊视觉层必须最后引入：它覆盖上面所有基础样式 */
+import './styles/atelier.css';
 
 const container = document.getElementById('root');
 if (!container) {

@@ -26,7 +26,7 @@ export function ChatPanel({ messages, streaming, onSend, onStop }: ChatPanelProp
   return (
     <section className="chat-pane" aria-label="对话区">
       {messages.length === 0 ? (
-        <ChatEmptyState />
+        <ChatEmptyState onExample={onSend} />
       ) : (
         <MessageList messages={messages} onSend={onSend} />
       )}
