@@ -11,6 +11,8 @@
 - **长任务持久化**（C6）：运行即落 RUNNING 快照，取消/失败显式终态（CANCELLED/FAILED/TERMINATED）；服务重启将遗留 RUNNING 改判 TERMINATED，不留虚假成功
 - **用户鉴权与额度**（C7）：SessionAuthInterceptor（X-Session-Token 会话优先 + X-API-Key 共享口令兼容，fail-closed）· UserAuthService（登录 8h 会话，未配置诚实降级 503）· UserQuota（每用户每日次数 + 成本双上限，取消退还，成本按毫元整数累计防浮点漂移）
 - **前端自动化测试**（C8）：vitest3 + RTL 22 项回归（conversationReducer 13 项含取消/回滚/发布/切项目、SSE 解析 6 项含中文多字节切分与 abort 透传、useAgentStream 3 项含单流约束与卸载中止）+ Playwright E2E 骨架（CODECANVAS_E2E=1 显式启用）
+- **E2E 进 CI 实跑**：e2e job 本地验证通过后固化（后端离线 MOCK 引擎 → 前端 dev server → Chromium 1.65 → 生成/取消/回滚/发布全链路 5.0s），失败上传 Playwright trace；发布步骤按 UI 实况修正（直接结果对话框 + input value 断言，移除骨架期不存在的"确认"假设）；frontend job 补 vitest 22 项
+- **依赖漏洞扫描进 CI**：dependency-scan job（OSS Index audit，CVSS≥7 门禁 + 匿名限流重试 3 次），本地实测 0 高危通过
 - **离线评测基线**：100 个版本化生成/修改案例，0 模型调用一条命令复现（`mvn test -Dtest=CodeCanvasEvalHarnessTest`），报告落盘 `evals/reports/`；基线 100/100 通过，重构门禁通过率降幅 ≤2pp
 
 ### Changed（架构重构）

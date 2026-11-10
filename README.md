@@ -719,9 +719,8 @@ $JAVA_HOME/bin/java backend/tools/VirtualThreadBench.java 400 60   # 400 个任�
 ## 后续方向
 
 1. 容器级沙箱隔离（Docker `--network none`）落地，替换进程级方案的最后一层风险
-2. Playwright E2E 在 CI 实跑（当前骨架已就位，需 CI 环境 Chromium 安装）
-3. 把路由决策与成本台账持久化（目前是进程内累计、重启归零），据此做路由参数的离线回测
-4. ReAct 分支的 A/B 实测数据回填：`docs/react-ab.md` 已备好方法论与取数表，
+2. 把路由决策与成本台账持久化（目前是进程内累计、重启归零），据此做路由参数的离线回测
+3. ReAct 分支的 A/B 实测数据回填：`docs/react-ab.md` 已备好方法论与取数表，
    需在部署环境跑真实模型积累样本后填入对比结论
 
 ---
