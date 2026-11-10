@@ -19,12 +19,14 @@ public record RunTraceSummary(
         double cost,
         int promptTokens,
         int completionTokens,
-        int eventCount) {
+        int eventCount,
+        String status,
+        String statusNote) {
 
     public static RunTraceSummary of(RunTrace t) {
         return new RunTraceSummary(t.runId(), t.projectId(), t.startedAt(), t.durationMs(),
                 t.ok(), t.error(), t.trigger(), t.requirement(), t.toolCalls(), t.healAttempts(),
                 t.recovered(), t.tier(), t.cost(), t.promptTokens(), t.completionTokens(),
-                t.events().size());
+                t.events().size(), t.status(), t.statusNote());
     }
 }

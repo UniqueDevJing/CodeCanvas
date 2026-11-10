@@ -81,6 +81,9 @@ public class AgentOrchestrator {
                 request.strategy() == null ? "PIPELINE" : request.strategy().name(),
                 request.message());
         TokenMeter.RunMeter run = meter.newRunMeter();
+        // C6 长任务持久化：begin 后立即落盘 RUNNING 快照，
+        // 服务重启时该任务会被启动恢复明确改判为 TERMINATED，不留虚假成功
+        traceStore.save(recorder.runningSnapshot());
         // P1-6：按运行维度统计语义缓存命中并如实留痕（同项目串行生成，差值法可靠）。
         long cacheHitsBefore = gateway.cacheHits();
         try {
@@ -92,11 +95,13 @@ public class AgentOrchestrator {
             }
             traceStore.save(recorder.finish(null));
         } catch (CancelledException cancelled) {
+            // C6：取消也要落盘收尾，否则重启恢复会把它误判成中断
+            traceStore.save(recorder.finish("client-cancelled", RunTrace.STATUS_CANCELLED));
             throw cancelled;
         } catch (Exception e) {
             log.error("Agent 运行失败", e);
             String message = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
-            traceStore.save(recorder.finish(message));
+            traceStore.save(recorder.finish(message, RunTrace.STATUS_FAILED));
             listener.onError(message);
         }
     }

@@ -43,9 +43,37 @@ public class RunTraceStore {
                 stream.filter(p -> p.getFileName().toString().endsWith(".json"))
                         .forEach(this::loadOne);
             }
+            terminateOrphans();
             log.info("[trace] 已加载 {} 条历史运行轨迹", index.size());
         } catch (Exception e) {
             log.warn("[trace] 轨迹目录初始化失败（不影响主流程）: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * C6 启动恢复：上一次进程没来得及收尾的任务（status=RUNNING）在此刻统一改判为
+     * TERMINATED——服务重启即任务终止，产物未入库的不虚假标记为成功。
+     */
+    private void terminateOrphans() {
+        for (RunTrace trace : index.values()) {
+            if (trace.isRunning()) {
+                RunTrace terminated = new RunTrace(trace.runId(), trace.projectId(),
+                        trace.startedAt(), System.currentTimeMillis(),
+                        System.currentTimeMillis() - trace.startedAt(),
+                        false, "服务重启，任务中断",
+                        trace.trigger(), trace.strategy(), trace.requirement(),
+                        trace.toolCalls(), trace.healAttempts(), trace.recovered(),
+                        trace.model(), trace.tier(), trace.cost(), trace.baselineCost(),
+                        trace.promptTokens(), trace.completionTokens(),
+                        trace.contextInjected(), trace.contextRaw(),
+                        trace.versionId(), trace.versionLabel(),
+                        RunTrace.STATUS_TERMINATED,
+                        "服务重启，运行中的任务已被明确终止；未交付的产物以终止处理，不做恢复",
+                        trace.events());
+                save(terminated);
+                log.warn("[trace] 重启恢复: 运行中任务 {} 已明确终止（startedAt={}）",
+                        trace.runId(), trace.startedAt());
+            }
         }
     }
 

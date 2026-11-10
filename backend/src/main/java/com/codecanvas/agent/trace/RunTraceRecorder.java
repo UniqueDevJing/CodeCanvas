@@ -167,23 +167,53 @@ public class RunTraceRecorder implements com.codecanvas.agent.AgentListener {
 
     // ---------- 收尾 ----------
 
+    /** C6：begin 后立即落盘一次 RUNNING 快照——服务重启时它能被识别为中断任务。 */
+    public RunTrace runningSnapshot() {
+        return new RunTrace(runId, projectId == null ? "" : projectId, start, 0, 0,
+                false, null, trigger == null ? "" : trigger, strategy == null ? "" : strategy,
+                requirement == null ? "" : requirement,
+                toolCalls, healAttempts, recovered, model == null ? "" : model, tier == null ? "" : tier,
+                cost, baselineCost, promptTokens, completionTokens, contextInjected, contextRaw,
+                versionId == null ? "" : versionId, versionLabel == null ? "" : versionLabel,
+                RunTrace.STATUS_RUNNING, "任务运行中", List.copyOf(events));
+    }
+
     /** 运行结束（正常或异常）后调用；聚合 delta 并生成最终轨迹。 */
     public RunTrace finish(String errorMessage) {
+        String status = errorMessage == null ? RunTrace.STATUS_COMPLETED
+                : (errorMessage.contains("client-cancelled") ? RunTrace.STATUS_CANCELLED
+                : RunTrace.STATUS_FAILED);
+        return finish(errorMessage, status);
+    }
+
+    /** 显式指定结束状态的重载（编排层可对取消/失败给出准确语义）。 */
+    public RunTrace finish(String errorMessage, String status) {
         finishedAt = System.currentTimeMillis();
         if (errorMessage != null && error == null) {
             error = errorMessage;
         }
-        ok = error == null && ok;
+        ok = RunTrace.STATUS_COMPLETED.equals(status) && ok;
         // delta 聚合汇总（单条，避免逐 token 事件撑爆轨迹）
         deltaChars.forEach((path, chars) -> events.add(RunEvent.of(start, "delta_summary", "GENERATE",
                 "流式输出 " + path + "：" + chars + " 字符 / " + deltaCount.get(path) + " 段",
                 Map.of("path", path, "chars", chars, "deltas", deltaCount.get(path)))));
-        return new RunTrace(runId, projectId, start, finishedAt, Math.max(0, finishedAt - start),
+        return new RunTrace(runId, projectId == null ? "" : projectId, start, finishedAt,
+                Math.max(0, finishedAt - start),
                 ok, error, trigger == null ? "" : trigger, strategy == null ? "" : strategy,
                 requirement == null ? "" : requirement,
                 toolCalls, healAttempts, recovered, model == null ? "" : model, tier == null ? "" : tier,
                 cost, baselineCost, promptTokens, completionTokens, contextInjected, contextRaw,
                 versionId == null ? "" : versionId, versionLabel == null ? "" : versionLabel,
+                status, statusNote(errorMessage, status),
                 List.copyOf(events));
+    }
+
+    private String statusNote(String errorMessage, String status) {
+        return switch (status) {
+            case RunTrace.STATUS_COMPLETED -> "任务完成";
+            case RunTrace.STATUS_CANCELLED -> "客户端取消，任务已终止";
+            case RunTrace.STATUS_FAILED -> "任务失败：" + (errorMessage == null ? "未知原因" : errorMessage);
+            default -> errorMessage == null ? "" : errorMessage;
+        };
     }
 }
